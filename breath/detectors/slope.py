@@ -27,7 +27,7 @@ from .base import Detector
 SLOPE_TAU_S = 0.08    # 기울기 평활 시상수(초). 작을수록 빠르지만 노이즈에 약함
 AVG_TAU_S = 8.0       # 평균|기울기| 추정 시상수(적응형 데드밴드용)
 K_SLOPE = 0.25        # 데드밴드 = K_SLOPE × 평균|기울기|
-SLOPE_FLOOR = 1.0     # 데드밴드 절대 하한(mV/s). 무신호 시 노이즈 헛전환 방지
+SLOPE_FLOOR = 1.0     # 데드밴드 절대 하한(mV/s). -1mV~1mV 이면 전환 안함.
 
 # --- 정확도 장치 ---
 MIN_PHASE_S = 1.2     # 전환 직후 반대 전환 금지(초). double-hump 억제 주력

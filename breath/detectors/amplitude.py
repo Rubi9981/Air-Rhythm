@@ -17,7 +17,7 @@ K_DELTA = 0.1         # 호흡 주기 전환에 필요한 값 = K_DELTA × 최�
 DELTA_FLOOR = 2.0     # 호흡 주기 전환 시 필요한 최소 mV 값
 MIN_PHASE_S = 0.5     # 전환 직후 반대 전환 금지 시간
 SETTLE_S = 10.0       # 센서 안정화 시간 (10초)
-ENV_DECAY_S = 6.0     # 진폭 포락선 완화 시상수(초)
+ENV_DECAY_S = 6.0     # 진폭 포락선 완화 시상수(초), peak-to-peak와 무호흡 검출에 사용
 POLARITY = +1         # +1: 상승=흡기. 센서 반대로 붙였으면 -1
 
 # --- 호흡률 ---
@@ -28,7 +28,7 @@ RATE_MAX_S = 12.0
 # --- 무호흡 ---
 APNEA_FRAC = 0.30     # 진폭이 기준선의 이 비율 아래면 무호흡 후보
 APNEA_MIN_S = 8.0     # 지속 시간 임계
-BASELINE_TAU_S = 30.0 # 정상 호흡 진폭 기준선 EMA 시상수
+BASELINE_TAU_S = 30.0 # 정상 호흡 진폭 기준선 EMA 시상수, 무호흡 검출에 사용
 
 
 class AmplitudeDetector(Detector):
