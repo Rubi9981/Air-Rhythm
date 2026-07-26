@@ -48,7 +48,7 @@ conductive-rubber/
 | `filters.py` | 디지털 필터·스무딩. `bandpass_1pole`, 2차 Butterworth(`Biquad`, `bandpass_butter2`), `moving_average_causal`, `ema`, `estimate_sample_rate` |
 | `detectors/base.py` | 검출기 인터페이스 `Detector.update(t,y)->event` 와 배열 재생 러너 `run_detector` |
 | `detectors/amplitude.py` | **진폭 히스테리시스 검출기** `AmplitudeDetector` — 골/마루에서 적응형 문턱만큼 되돌아오면 전환. 호흡률·무호흡 판정 포함 |
-| `detectors/slope.py` | **기울기 검출기** `SlopeDetector` — 평활 기울기의 부호 전환으로 전환. 지연이 더 낮다(무호흡 없음) |
+| `detectors/slope.py` | **기울기 검출기** `SlopeDetector` — 평활 기울기의 부호 전환으로 전환. 중점 게이트로 반대편 요철을 거른다. 지연이 더 낮다(무호흡 없음) |
 
 > 두 검출기는 같은 `Detector.update(t,y)->event` 인터페이스와 이벤트 스키마를
 > 쓰므로 `run_detector`·플롯·스크립트를 그대로 공유한다. 새 방식도 `Detector` 를
@@ -160,13 +160,21 @@ delta = max(K_DELTA · amp, DELTA_FLOOR)   # 전환 문턱
 d  = (y - y_prev) / dt            # 1차 차분(기울기)
 sd = ema(d, SLOPE_TAU_S)          # 기울기 평활 (지연↔노이즈 손잡이)
 sth = max(K_SLOPE·평균|sd|, SLOPE_FLOOR)   # 적응형 데드밴드(Schmitt)
-# FALLING 중 sd > +sth  →  흡기 시작 확정
-# RISING  중 sd < -sth  →  호기 시작 확정
+mid = (env_hi + env_lo) / 2       # 중점 게이트 기준(MID_GATE)
+# FALLING 중 sd > +sth  이고 y < mid  →  흡기 시작 확정
+# RISING  중 sd < -sth  이고 y > mid  →  호기 시작 확정
 ```
 - **지연은 `SLOPE_TAU_S`(기울기 평활)가 지배** — 약하게 할수록 확정이 극점에 가까워진다.
-- **정확도(double-hump 오검출)는 `MIN_PHASE_S`가 지배** — 전환 직후 그만큼 반대 전환을
-  막는다. "가장 짧은 반주기"보다 작아야 하며(기본 1.2s → 최대 ~25bpm까지 안전), 진폭
+- **정확도(double-hump 오검출)는 `MIN_PHASE_S`와 `MID_GATE`가 지배.** 둘 다 진폭
   되돌림으로 막는 것과 달리 **지연을 늘리지 않는다**.
+  - `MIN_PHASE_S`: 전환 직후 그만큼 반대 전환을 막는다. "가장 짧은 반주기"보다
+    작아야 한다(1.2s → 최대 ~25bpm, 0.6s → ~50bpm).
+  - `MID_GATE`: 흡기 전환은 중점 아래, 호기 전환은 중점 위에서만 허용한다. 참 극점은
+    항상 열린 쪽에 있으므로 참 전환은 막지 않고, 반대편 요철만 걸러낸다. 절대 시간이
+    아니라 파형으로 판단하므로 **호흡 속도에 자동 적응**하며, 그만큼 `MIN_PHASE_S`를
+    낮춰 대응 호흡률 상한을 넓힐 수 있다. 기준을 0 이 아니라 포락선 중점으로 두는 이유는
+    `env_lo ≤ y ≤ env_hi` 라서 y 가 매 호흡 중점을 반드시 가로질러 **교착이 불가능**하고,
+    I:E 비대칭도 함께 보정되기 때문이다(특허의 midpoint=½ p-p 와 같은 정의).
 - `MIN_AMP` 아래(무신호)면 판정 보류. `PROM_RATIO>0`이면 골/마루에서 되돌림을 추가로
   요구(노이즈에 더 강하지만 지연↑, 기본 off).
 - 이벤트 스키마가 진폭 방식과 같아 `run_detector`·`plot_detection`·`ONSET_MARK` 를 그대로 쓴다.

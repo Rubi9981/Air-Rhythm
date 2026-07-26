@@ -7,6 +7,11 @@
 정확도 장치(오검출 억제):
   - 적응형 기울기 데드밴드(Schmitt): sth = max(K_SLOPE·평균|기울기|, SLOPE_FLOOR)
   - 최소 위상시간 잠금(MIN_PHASE_S): double-hump 억제의 주력. 지연을 늘리지 않는다.
+  - 중점 게이트(MID_GATE): 흡기 전환은 포락선 중점 아래, 호기 전환은 위에서만 허용.
+    참 극점은 항상 열린 쪽에 있으므로 지연을 늘리지 않고, 반대편에서 생긴 요철성
+    가짜 전환만 걸러낸다. MIN_PHASE_S 와 같은 구간을 덮되 절대 시간이 아니라
+    파형 자체로 판단하므로, 게이트를 켜면 MIN_PHASE_S 를 줄여 대응 호흡률 상한을
+    넓힐 수 있다.
   - 진폭 하한(MIN_AMP): 무신호 구간 판정 보류
   - (옵션) prominence 게이트(PROM_RATIO>0): 골/마루에서 그만큼 되돌아온 뒤 확정.
     노이즈에 더 강해지지만 그 상승/하강을 기다리므로 지연이 늘어난다. 기본은 0(off).
@@ -14,8 +19,9 @@
 무호흡 판정은 포함하지 않는다. 이벤트 스키마는 AmplitudeDetector 와 동일하므로
 run_detector·plot_detection 을 그대로 쓸 수 있다. 미래 샘플을 참조하지 않는다.
 
-튜닝 요지: 지연은 SLOPE_TAU_S 가, 정확도(double-hump)는 MIN_PHASE_S 가 지배한다.
-MIN_PHASE_S 는 "가장 짧은 반주기" 보다 작아야 한다(기본 1.2s → 최대 ~25bpm까지 안전).
+튜닝 요지: 지연은 SLOPE_TAU_S 가, 정확도(double-hump)는 MIN_PHASE_S 와 MID_GATE 가
+지배한다. MIN_PHASE_S 는 "가장 짧은 반주기" 보다 작아야 한다(1.2s → 최대 ~25bpm,
+0.6s → ~50bpm). MID_GATE 가 요철 방어를 나눠 맡으므로 함께 쓰면 더 낮게 잡을 수 있다.
 """
 
 from statistics import median
@@ -31,11 +37,12 @@ SLOPE_FLOOR = 1.0     # 데드밴드 절대 하한(mV/s). -1mV~1mV 이면 전환
 
 # --- 정확도 장치 ---
 MIN_PHASE_S = 1.2     # 전환 직후 반대 전환 금지(초). double-hump 억제 주력
+MID_GATE = True       # 흡기 전환은 포락선 중점 아래, 호기 전환은 위에서만 허용
 PROM_RATIO = 0.0      # 골/마루에서 되돌림 요구(진폭 대비). >0이면 지연↑. 기본 off
 MIN_AMP = 5.0         # 최근 진폭(p-p)이 이보다 작으면 판정 보류(mV)
 ENV_DECAY_S = 6.0     # 진폭 포락선 완화 시상수(초)
 
-SETTLE_S = 10.0       # 시작 과도응답 구간(판정 보류)
+SETTLE_S = 12.0       # 시작 과도응답 구간(판정 보류)
 POLARITY = +1         # +1: 상승=흡기. 센서 반대로 붙였으면 -1
 
 # --- 호흡률 ---
@@ -53,7 +60,8 @@ class SlopeDetector(Detector):
 
     def __init__(self, slope_tau_s=SLOPE_TAU_S, avg_tau_s=AVG_TAU_S,
                  k_slope=K_SLOPE, slope_floor=SLOPE_FLOOR,
-                 min_phase_s=MIN_PHASE_S, prom_ratio=PROM_RATIO, min_amp=MIN_AMP,
+                 min_phase_s=MIN_PHASE_S, mid_gate=MID_GATE,
+                 prom_ratio=PROM_RATIO, min_amp=MIN_AMP,
                  env_decay_s=ENV_DECAY_S, settle_s=SETTLE_S, polarity=POLARITY,
                  rate_window=RATE_WINDOW, rate_min_s=RATE_MIN_S, rate_max_s=RATE_MAX_S):
         self.slope_tau_s = slope_tau_s
@@ -61,6 +69,7 @@ class SlopeDetector(Detector):
         self.k_slope = k_slope
         self.slope_floor = slope_floor
         self.min_phase_s = min_phase_s
+        self.mid_gate = mid_gate
         self.prom_ratio = prom_ratio
         self.min_amp = min_amp
         self.env_decay_s = env_decay_s
@@ -135,6 +144,15 @@ class SlopeDetector(Detector):
 
         can_switch = (t - self.last_transition_t) >= self.min_phase_s
 
+        # 중점 게이트 — 기준은 포락선 중점(= 이번 호흡 마루/골의 한가운데).
+        # 감쇠는 env_hi/env_lo 를 대칭으로 좁히므로 중점을 움직이지 못한다.
+        # env_lo <= y <= env_hi 이고 극점에서 등호가 성립하므로 y 는 매 호흡 반드시
+        # 중점을 두 번 가로지른다 → 교착이 구조적으로 불가능하다.
+        gate_open = True
+        if self.mid_gate:
+            mid = 0.5 * (self.env_hi + self.env_lo)
+            gate_open = (y < mid) if self.phase == self.FALLING else (y > mid)
+
         if self.phase == self.UNKNOWN:
             if self.sd > sth:
                 self.phase = self.RISING
@@ -150,7 +168,8 @@ class SlopeDetector(Detector):
             if y < self.ext_val:                       # 골 추적
                 self.ext_val, self.ext_t, self.ext_yraw = y, t, y_raw
             # 골에서 prom·amp 만큼 되돌아 올라왔는가 (교착 없음)
-            if can_switch and self.sd > sth and (y - self.ext_val) >= self.prom_ratio * amp:
+            if (can_switch and gate_open and self.sd > sth
+                    and (y - self.ext_val) >= self.prom_ratio * amp):
                 ev = {"type": "inhale_onset", "t": t, "y": y_raw,
                       "ext_t": self.ext_t, "ext_y": self.ext_yraw}
                 self.inhale_onsets.append(t)
@@ -162,7 +181,8 @@ class SlopeDetector(Detector):
             if y > self.ext_val:                       # 마루 추적
                 self.ext_val, self.ext_t, self.ext_yraw = y, t, y_raw
             # 마루에서 prom·amp 만큼 되돌아 내려왔는가
-            if can_switch and self.sd < -sth and (self.ext_val - y) >= self.prom_ratio * amp:
+            if (can_switch and gate_open and self.sd < -sth
+                    and (self.ext_val - y) >= self.prom_ratio * amp):
                 ev = {"type": "exhale_onset", "t": t, "y": y_raw,
                       "ext_t": self.ext_t, "ext_y": self.ext_yraw}
                 self.phase = self.FALLING

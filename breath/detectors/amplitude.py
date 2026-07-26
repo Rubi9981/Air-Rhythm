@@ -16,7 +16,7 @@ from .base import Detector
 K_DELTA = 0.1         # 호흡 주기 전환에 필요한 값 = K_DELTA × 최근 peak-to-peak 진폭
 DELTA_FLOOR = 2.0     # 호흡 주기 전환 시 필요한 최소 mV 값
 MIN_PHASE_S = 0.5     # 전환 직후 반대 전환 금지 시간
-SETTLE_S = 10.0       # 센서 안정화 시간 (10초)
+SETTLE_S = 12.0       # 센서 안정화 시간 (10초)
 ENV_DECAY_S = 6.0     # 진폭 포락선 완화 시상수(초), peak-to-peak와 무호흡 검출에 사용
 POLARITY = +1         # +1: 상승=흡기. 센서 반대로 붙였으면 -1
 
