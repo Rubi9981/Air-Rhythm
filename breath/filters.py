@@ -2,7 +2,10 @@
 
   - 스무딩:     moving_average_causal, ema
   - 1-pole 대역통과: bandpass_1pole (매 샘플 실제 dt 로 계수 재계산)
-  - 2차 Butterworth: Biquad + bandpass_butter2 (쌍일차 변환, 고정 설계 fs)
+  - 2차 Butterworth: Biquad → BandpassButter2 (한 샘플씩) → bandpass_butter2 (배열 래퍼)
+
+배열 API 와 스트리밍 API 는 같은 구현을 공유한다. 실시간 시리얼 입력과 CSV
+재생이 같은 결과를 내는 것이 이 구조로 보장된다.
 """
 
 import math
@@ -150,14 +153,29 @@ def butterworth2_highpass(cutoff_hz, sample_rate_hz):
                   (1.0 - math.sqrt(2.0) * k + k * k) * norm)
 
 
+class BandpassButter2:
+    """2차 Butterworth 대역통과 — 한 샘플씩(스트리밍). 상태는 biquad 2개뿐.
+
+    실시간 경로(시리얼)와 오프라인 경로(CSV 재생)가 이 클래스를 함께 쓰므로
+    두 경로의 계산이 구조적으로 동일하다. 배열이 필요하면 bandpass_butter2().
+    """
+
+    def __init__(self, sample_rate_hz, hp_hz, lp_hz):
+        self.high_pass = butterworth2_highpass(hp_hz, sample_rate_hz)
+        self.low_pass = butterworth2_lowpass(lp_hz, sample_rate_hz)
+
+    def update(self, x):
+        """샘플 하나를 통과시킨다. 미래 샘플을 참조하지 않는다."""
+        return self.low_pass.update(self.high_pass.update(x))
+
+
 def bandpass_butter2(values, sample_rate_hz, hp_hz, lp_hz):
-    """2차 Butterworth 대역통과(인과적): 고역통과 biquad → 저역통과 biquad."""
-    high_pass = butterworth2_highpass(hp_hz, sample_rate_hz)
-    low_pass = butterworth2_lowpass(lp_hz, sample_rate_hz)
-    out = []
-    for x in values:
-        out.append(low_pass.update(high_pass.update(x)))
-    return out
+    """2차 Butterworth 대역통과(인과적): 고역통과 biquad → 저역통과 biquad.
+
+    BandpassButter2 를 배열 전체에 적용하는 편의 래퍼.
+    """
+    bp = BandpassButter2(sample_rate_hz, hp_hz, lp_hz)
+    return [bp.update(x) for x in values]
 
 
 def estimate_sample_rate(times):

@@ -75,7 +75,8 @@ class AmplitudeDetector(Detector):
         self.low_amp_since = None
         self.in_apnea = False
 
-    def _amplitude(self):
+    def amplitude(self):
+        """현재 추정 진폭(최근 peak-to-peak). 무신호 판정·표시용."""
         if self.env_hi is None or self.env_lo is None:
             return 0.0
         return self.env_hi - self.env_lo
@@ -97,11 +98,11 @@ class AmplitudeDetector(Detector):
         self.last_t = t
 
         # 누설 포락선(적응형 peak-to-peak)
-        amp0 = self._amplitude()
+        amp0 = self.amplitude()
         decay = (amp0 if amp0 > 0 else 1.0) * dt / max(self.env_decay_s, 1e-6)
         self.env_hi = max(y, self.env_hi - decay)
         self.env_lo = min(y, self.env_lo + decay)
-        amp = self._amplitude()
+        amp = self.amplitude()
 
         event = self._update_apnea(t, dt, amp)
 

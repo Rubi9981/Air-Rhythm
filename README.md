@@ -45,7 +45,8 @@ conductive-rubber/
 |---|---|
 | `config.py` | 공용 상수 — 대역통과 기본 차단주파수(HP/LP), 호흡 페이싱 기본값, 색상 |
 | `io_csv.py` | CSV 읽기(`read_csv`), 파일 선택(`ask_csv_file`), 흡기/호기 구간 계산(`spans_*`, `target_spans`), 이미지 경로 |
-| `filters.py` | 디지털 필터·스무딩. `bandpass_1pole`, 2차 Butterworth(`Biquad`, `bandpass_butter2`), `moving_average_causal`, `ema`, `estimate_sample_rate` |
+| `io_serial.py` | 시리얼 입력 — 포트 열기(`open_port`), 줄 파싱(`parse_sample`, 펌웨어 진단줄 `parse_diag`), 수신율 계량(`RateMeter`) |
+| `filters.py` | 디지털 필터·스무딩. `bandpass_1pole`, 2차 Butterworth(`Biquad` → `BandpassButter2` 한 샘플씩 → `bandpass_butter2` 배열 래퍼), `moving_average_causal`, `ema`, `estimate_sample_rate` |
 | `detectors/base.py` | 검출기 인터페이스 `Detector.update(t,y)->event` 와 배열 재생 러너 `run_detector` |
 | `detectors/amplitude.py` | **진폭 히스테리시스 검출기** `AmplitudeDetector` — 골/마루에서 적응형 문턱만큼 되돌아오면 전환. 호흡률·무호흡 판정 포함 |
 | `detectors/slope.py` | **기울기 검출기** `SlopeDetector` — 평활 기울기의 부호 전환으로 전환. 중점 게이트로 반대편 요철을 거른다. 지연이 더 낮다(무호흡 없음) |
@@ -65,6 +66,7 @@ conductive-rubber/
 | 파일 | 역할 | 실행 |
 |---|---|---|
 | `log_serial.py` | 시리얼(raw,mv) → `data/`에 CSV 기록 + 호흡 페이싱 안내 | `python scripts/log_serial.py` |
+| `monitor_breath.py` | **실시간 검출 모니터** — 시리얼을 그 자리에서 필터·검출해 터미널에 표시 (+CSV 동시 기록) | `python scripts/monitor_breath.py` |
 | `plot_signals.py` | raw/mV 원본·스무딩·대역통과 다단 비교 | `python scripts/plot_signals.py data/xxx.csv` |
 | `compare_filters.py` | 1-pole vs 2차 Butterworth 대역통과 비교 | `python scripts/compare_filters.py data/xxx.csv` |
 | `detect_breath.py` | **진폭 방식** 검출 → 화살표 그래프 (+무호흡) | `python scripts/detect_breath.py data/xxx.csv` |
@@ -232,13 +234,84 @@ python scripts/detect_slope.py    data/breath_YYYYMMDD_HHMMSS.csv   # 기울기 
 검출 그래프: 위=mV 원본 + 목표(페이싱) 음영, 아래=Butterworth 대역통과 +
 **흡기 시작=붉은 화살표, 호기 시작=초록 화살표**, 무호흡=회색 구간.
 
+### 실시간으로 보기
+
+기록·재생 없이 그 자리에서 검출 결과를 본다. CSV 도 함께 남으므로 나중에
+`detect_slope.py` 로 재생해 실시간 결과와 대조할 수 있다.
+
+```bash
+python scripts/monitor_breath.py
+```
+
+```
+  0:43.18   ▲ 흡기 시작   (지연  218ms)    15.2 bpm
+  0:45.09   ▼ 호기 시작   (지연  241ms)    15.2 bpm
+  0:49.71   ○ 신호 없음   (진폭  5.0mV — 스트랩 확인)
+  1:10.21   ● 신호 복귀   (진폭  8.0mV)
+  1:12  |  ▲ 흡기          |   15.2 bpm  |  진폭  24.4mV  |  50.0/50.0Hz  |  3350개
+```
+
+- 시작 전 `READY_S`(기본 5초) 준비 시간을 둔다. 그동안 도착하는 샘플은 읽어서 버린다 —
+  그냥 기다리면 OS 버퍼에 쌓였다가 시작 직후 쏟아져 앞부분 `dt` 가 뭉친다.
+- 흘러가는 줄 = **전환이 확정된 순간**(제품이 트리거될 시점). 지연은 극점→확정.
+  무신호·무호흡 구간도 같은 자리에 남고, CSV 의 `event` 열에도 기록된다.
+- 맨 아래 줄 = 현재 상태. `50.0/50.0Hz` 는 **기기가 보고한 주기 / 호스트 수신율**로,
+  둘이 벌어지면 그 차이가 곧 유실된 샘플이다(`!` 표시).
+- 앞 `SETTLE_S` 초는 `정착 중 … N초 남음` 으로 카운트다운하고 판정하지 않는다.
+- `FS` 는 펌웨어의 `PERIOD_MS`(20ms → 50Hz)와 맞춰야 한다. 대역통과 계수가
+  차단주파수/fs 비율로만 설계되므로, 어긋나면 차단주파수가 같은 비율로 밀린다.
+
+> 실시간과 재생이 같은 결과를 내는 것은 **같은 `BandpassButter2`·`Detector` 를
+> 쓰기 때문**이다(배열 함수는 이 클래스의 얇은 래퍼). 계산이 한 곳뿐이라 어긋날 수 없다.
+
 ---
 
-## 펌웨어 이식 노트
+## 펌웨어 이식 — `firmware/breath_monitor/`
 
-- `breath/`(필터·검출)만 ESP32(C)로 옮기면 된다. `plotting/`·`scripts/`는 PC 전용.
-- `AmplitudeDetector`/`SlopeDetector` 의 `update(t, y)` 는 상태값 몇 개만 쓰는 인과 처리라 그대로 이식 가능.
-- `estimate_sample_rate()` 는 오프라인 편의용이며, 펌웨어에선 알려진 상수 fs(≈46Hz)로 대체.
+`SlopeDetector` 경로는 **이식이 끝났다.** 기기가 스스로 판정하고 전환 순간을 시리얼로 알린다.
+
+| 파일 | 대응 |
+|---|---|
+| `breath_config.h` | `breath/config.py` + `slope.py` 상수. **양쪽을 함께 고칠 것** |
+| `breath_filter.h/.cpp` | `filters.Biquad`, `BandpassButter2` |
+| `breath_slope.h/.cpp` | `detectors.SlopeDetector` + `monitor_breath.check_signal()` |
+| `breath_monitor.ino` | 샘플링 루프 조립 + 이벤트 출력 |
+
+### 이식하며 바뀐 것
+
+- **시간을 초가 아니라 샘플 수로** 다룬다. `dt` 가 상수(1/50s)라 EMA 계수가 컴파일 상수가
+  되고, `micros()` 순환과 float 정밀도 저하가 원천적으로 사라진다.
+- **대역통과 입력에서 첫 샘플을 뺀다.** 고역통과가 어차피 DC 를 지우므로 출력은 같지만,
+  원신호가 ~1000mV 라 biquad 상태가 커지고 극점 반지름 0.9929 가 반올림을 ~140배 증폭한다.
+  실측: 파이썬 대비 오차 0.057mV → **0.0017mV**.
+- `bpm()` 의 흡기 시각은 무한 리스트가 아니라 12칸 링버퍼(보고용이라 검출엔 영향 없음).
+- ESP32 는 `double` 이 소프트웨어 에뮬레이션이므로 전부 `float`(`bfloat` typedef).
+
+### 검증 — 녹음 CSV 로 대조
+
+`breath_config.h` 의 `BREATH_USE_DOUBLE` 로 정밀도를 전환해 호스트에서 컴파일하면,
+**로직 오류와 float32 정밀도 문제가 분리**된다. `data/*.csv` 의 `event` 열이 곧 정답지다.
+
+```bash
+c++ -O2 -Ifirmware/breath_monitor host_test.cpp \
+    firmware/breath_monitor/breath_{filter,slope}.cpp -o t && ./t data/breath_*.csv
+```
+
+실측(`breath_20260727_205524.csv`, 4264샘플): **이벤트 46개, 종류 불일치 0,
+33개 완전 일치 + 13개 1샘플(20ms) 차이.** `float` 와 `double` 결과가 동일해 정밀도는
+문제가 아니며, 남은 1샘플 차이는 PC 가 호스트 타임스탬프를, 펌웨어가 고정 `dt` 를 쓰는
+데서 온다(파이썬이 같은 CSV 를 재생해도 같은 크기의 차이가 난다).
+
+> 이 대조가 실제로 `LP_HZ` 불일치(0.50 vs 0.70)를 잡아냈다. 상수를 한쪽만 고치면
+> 바로 드러나므로, 파라미터를 바꿀 때마다 돌릴 것.
+
+### 남은 것
+
+- `estimate_sample_rate()` 는 오프라인 편의용이며, 펌웨어에선 상수 fs(50Hz)를 쓴다.
+  `vTaskDelayUntil` 로 정확히 20ms 주기를 지키므로 상수로 두어도 된다
+  (`delay(20)` 은 작업 시간이 주기에 더해져 45.5Hz 가 되니 쓰지 말 것).
+- `AmplitudeDetector`(무호흡)는 아직 이식하지 않았다. `update(t, y)` 가 같은 구조라
+  필요해지면 같은 방식으로 옮길 수 있다.
 - 방법론 근거:
   - 논문: Sang et al., *Biosensors* 2024, 14, 118 — 램프 방향(기울기)으로 흡기/호기.
   - 특허: US 11,324,950 B2 (Inspire Medical) — 미분 + moving baseline/midpoint 로 onset,
