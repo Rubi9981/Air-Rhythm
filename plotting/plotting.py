@@ -20,6 +20,27 @@ from breath.filters import (
 # -----------------------------------------------------------------------------
 # 공용 그리기 헬퍼
 # -----------------------------------------------------------------------------
+def use_korean_font():
+    """제목·라벨의 한글이 깨지지 않도록 설치된 한글 폰트를 고른다.
+
+    파일 이름이 그래프 제목에 들어가는데(예: 최현수.csv), matplotlib 기본 폰트인
+    DejaVu Sans 에는 한글 글리프가 없어 □□□ 로 나온다. 쓸 수 있는 폰트가 하나도
+    없으면 조용히 넘어가고 기존 동작을 유지한다.
+
+    matplotlib 을 import 하므로 그리기 직전에 호출한다(모듈 import 시점 아님).
+    """
+    from matplotlib import font_manager, rcParams
+
+    installed = {f.name for f in font_manager.fontManager.ttflist}
+    for name in ("AppleGothic", "Apple SD Gothic Neo", "NanumGothic", "Nanum Gothic",
+                 "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR"):
+        if name in installed:
+            rcParams["font.family"] = name
+            rcParams["axes.unicode_minus"] = False   # 한글 폰트엔 U+2212 가 없는 경우가 많다
+            return name
+    return None
+
+
 def shade_axis(ax, spans):
     """한 축에 흡기(빨강)/호기(초록) 배경을 칠한다."""
     for start, end, phase in spans:
@@ -72,6 +93,8 @@ def plot_signals(path, save=None, smooth=7, ema_alpha=None, xlim=None,
     """raw·mV 각각의 원본/스무딩(/대역통과)을 세로로 나눠 그린다."""
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
+
+    use_korean_font()   # 파일 이름이 제목에 들어가므로 한글이 깨지지 않게
 
     if save is None:
         save = image_path_for(path, "_signals.png")
@@ -146,6 +169,8 @@ def plot_filter_compare(path, save=None, hp=config.HP_HZ, lp=config.LP_HZ, xlim=
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
 
+    use_korean_font()   # 파일 이름이 제목에 들어가므로 한글이 깨지지 않게
+
     if save is None:
         save = image_path_for(path, "_filters.png")
     times, _raws, mvs, phases = read_csv(path)
@@ -210,7 +235,10 @@ def plot_detection(times, mvs, y_bp, inhale_onsets, exhale_onsets, apnea_spans,
     """위=mV 원본(+목표 음영), 아래=대역통과 신호 + 흡기(빨강)/호기(초록) 화살표."""
     import matplotlib.pyplot as plt
     from matplotlib.patches import Patch
+
     from matplotlib.lines import Line2D
+
+    use_korean_font()   # 파일 이름이 제목에 들어가므로 한글이 깨지지 않게
 
     fig, (ax_mv, ax_bp) = plt.subplots(2, 1, sharex=True, figsize=(14, 8))
 

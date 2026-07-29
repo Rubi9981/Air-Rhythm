@@ -12,9 +12,13 @@ from datetime import datetime
 
 
 def list_csv_files():
-    """측정 CSV 를 최근 저장 순으로 돌려준다. data/ 를 먼저, 없으면 현재 폴더."""
-    files = (glob.glob("data/breath_*.csv") or glob.glob("data/*.csv")
-             or glob.glob("breath_*.csv") or glob.glob("*.csv"))
+    """측정 CSV 를 최근 저장 순으로 돌려준다. data/ 를 먼저, 없으면 현재 폴더.
+
+    이름은 가리지 않는다. 예전에는 `data/breath_*.csv` 를 먼저 찾고 비었을 때만
+    `data/*.csv` 로 넘어갔는데, or 가 단축 평가라 breath_ 파일이 하나라도 있으면
+    손으로 이름 붙인 파일(예: 최현수.csv)이 목록에 아예 나오지 않았다.
+    """
+    files = glob.glob("data/*.csv") or glob.glob("*.csv")
     return sorted(files, key=os.path.getmtime, reverse=True)
 
 
