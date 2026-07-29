@@ -19,20 +19,20 @@
 #include "breath_config.h"
 
 typedef enum {
-  BR_NONE = 0,
-  BR_INHALE_ONSET,
-  BR_EXHALE_ONSET,
-  BR_SIGNAL_LOST,
-  BR_SIGNAL_OK
+    BR_NONE = 0,
+    BR_INHALE_ONSET,
+    BR_EXHALE_ONSET,
+    BR_SIGNAL_LOST,
+    BR_SIGNAL_OK
 } BreathEventType;
 
 typedef struct {
-  BreathEventType type;
-  uint32_t n;        // 확정 시점(샘플 번호)
-  uint32_t ext_n;    // 실제 극점(샘플 번호). 지연 = n - ext_n
-  bfloat y;          // 확정 시점의 대역통과 값
-  bfloat ext_y;      // 극점에서의 대역통과 값
-  bfloat amp;        // 그때의 추정 진폭
+    BreathEventType type;
+    uint32_t n;        // 확정 시점(샘플 번호)
+    uint32_t ext_n;    // 실제 극점(샘플 번호). 지연 = n - ext_n
+    bfloat y;          // 확정 시점의 대역통과 값
+    bfloat ext_y;      // 극점에서의 대역통과 값
+    bfloat amp;        // 그때의 추정 진폭
 } BreathEvent;
 
 #define BR_RISING   (+1)
@@ -40,23 +40,23 @@ typedef struct {
 #define BR_UNKNOWN  (0)
 
 typedef struct {
-  uint32_t n;                 // 지금까지 처리한 샘플 수
-  int started;
+    uint32_t n;                 // 지금까지 처리한 샘플 수
+    int started;
 
-  bfloat sd;                  // 평활 기울기
-  bfloat avg_abs_sd;          // 평균|기울기|
-  bfloat y_prev;
-  bfloat env_hi, env_lo;      // 누설 포락선
+    bfloat sd;                  // 평활 기울기
+    bfloat avg_abs_sd;          // 평균|기울기|
+    bfloat y_prev;
+    bfloat env_hi, env_lo;      // 누설 포락선
 
-  int phase;
-  bfloat ext_val, ext_yraw;   // 현재 구간의 극값
-  uint32_t ext_n;
-  uint32_t last_transition_n;
+    int phase;
+    bfloat ext_val, ext_yraw;   // 현재 구간의 극값
+    uint32_t ext_n;
+    uint32_t last_transition_n;
 
-  int signal_ok;              // 무신호 판정 상태
+    int signal_ok;              // 무신호 판정 상태
 
-  uint32_t onsets[ONSET_RING];  // 최근 흡기 시각(샘플) — 링버퍼
-  uint8_t onset_head, onset_count;
+    uint32_t onsets[ONSET_RING];  // 최근 흡기 시각(샘플) — 링버퍼
+    uint8_t onset_head, onset_count;
 } SlopeDetector;
 
 void slope_init(SlopeDetector *d);

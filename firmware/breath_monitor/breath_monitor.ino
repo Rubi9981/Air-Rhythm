@@ -97,11 +97,14 @@ void reportEvent(const BreathEvent &ev) {
 }
 
 void loop() {
-  if (REPORT_RATE) reportRate();
+  // 샘플링 hz 확인 시 아래 줄 주석 해제
+  // if (REPORT_RATE) reportRate();
 
   int raw = analogRead(SENSOR_PIN);
   int mv  = readAveragedMv(SENSOR_PIN);
-  Serial.print(raw); Serial.print('\t'); Serial.println(mv);  // PC 도구용 스트림 (그대로 유지)
+
+  // csv로 센서값 저장 시 아래 줄 주석 해제
+  // Serial.print(raw); Serial.print('\t'); Serial.println(mv);
 
   const bfloat y = bandpass_update(&bp, (bfloat)mv);
   BreathEvent ev;

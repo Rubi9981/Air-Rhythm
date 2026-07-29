@@ -9,9 +9,9 @@
 #include "breath_config.h"
 
 typedef struct {
-  bfloat b0, b1, b2, a1, a2;
-  bfloat state_1, state_2;
-  int initialized;
+    bfloat b0, b1, b2, a1, a2;
+    bfloat state_1, state_2;
+    int initialized;
 } Biquad;
 
 // 계수 설계 (cutoff < fs/2 여야 한다)
@@ -32,9 +32,9 @@ bfloat biquad_update(Biquad *q, bfloat x);
 // 증폭된다. 기준점을 빼면 상태가 0 근처에 머문다.
 // 실측: 파이썬 대비 최대 오차 0.057mV → 0.0017mV (33배 개선).
 typedef struct {
-  Biquad hp, lp;
-  bfloat offset;
-  int have_offset;
+    Biquad hp, lp;
+    bfloat offset;
+    int have_offset;
 } BandpassButter2;
 
 void bandpass_init(BandpassButter2 *bp, bfloat fs_hz, bfloat hp_hz, bfloat lp_hz);
