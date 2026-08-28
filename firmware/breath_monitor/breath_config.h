@@ -36,7 +36,7 @@ typedef float bfloat;
 // --- 정확도 장치 ---
 #define MIN_PHASE_S  1.2f      // 전환 직후 반대 전환 금지(초)
 #define MID_GATE     1         // 흡기는 포락선 중점 아래, 호기는 위에서만 허용
-#define PROM_RATIO   0.0f      // 골/마루 되돌림 요구(진폭 대비). 0 = off
+#define PROM_RATIO   0.0f      // 골/마루에서 진폭의 n%만큼 상승/하강한 뒤 흡기/호기 확정. 0 = off
 #define MIN_AMP      5.0f      // 최근 진폭(p-p)이 이보다 작으면 판정 보류(mV)
 #define ENV_DECAY_S  6.0f      // 진폭 포락선 완화 시상수(초)
 
@@ -62,7 +62,7 @@ typedef float bfloat;
 
 // --- EMA 계수 (컴파일 상수) ---
 // 파이썬: a = dt / (tau + dt)   — 후진 오일러라 dt 가 커져도 항상 0<a<1
-#define A_SLOPE      (DT_S / (SLOPE_TAU_S + DT_S))      // 0.2
+#define A_SLOPE      (DT_S / (SLOPE_TAU_S + DT_S))      // 0.2, 이 값을 높이면 기울기를 빨리 따라가 노이즈에 민감해지고, 낮추면 노이즈 저항이 강해지지만 지연이 커짐
 #define A_AVG        (DT_S / (AVG_TAU_S   + DT_S))      // 0.00249377
 #define ENV_DECAY_K  (DT_S / ENV_DECAY_S)               // 0.00333333
 
