@@ -1,0 +1,10 @@
+# SETTLED
+# EXHALE n=694 delay=140ms
+# INHALE n=754 delay=260ms
+# EXHALE n=1116 delay=140ms
+# INHALE n=1195 delay=160ms bpm=6.8
+# EXHALE n=1301 delay=160ms bpm=6.8
+# INHALE n=1361 delay=160ms bpm=9.9
+# EXHALE n=1421 delay=560ms bpm=9.9
+# INHALE n=1495 delay=80ms bpm=18.1
+# EXHALE n=1555 delay=420ms bpm=18.1
