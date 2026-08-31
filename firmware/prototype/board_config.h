@@ -12,7 +12,7 @@
 
 const int SENSOR_PIN = 4;        // ADC1 채널 GPIO. WiFi 쓸 거면 반드시 ADC1(GPIO 1~10)
 const uint32_t PERIOD_MS = 20;   // 표본화 주기 → 50Hz. breath_config.h 의 FS_HZ 와 짝
-const int AVG_N = 16;            // mV 평균 횟수(약 1.9ms). 줄이면 기울기 검출의 노이즈 여유가 준다
+const int ADC_AVG_COUNT = 16;            // mV 평균 횟수(약 1.9ms). 줄이면 기울기 검출의 노이즈 여유가 준다
 const bool REPORT_RATE = true;   // 1초마다 '# fs=...' 진단 줄. 측정이 끝나면 false 로
 const bool REPORT_SAMPLE = false; // 'raw<TAB>mv' 샘플 줄. raw 값과 mv 값을 확인할 때 true. 일반적으로 false.
 
@@ -31,6 +31,9 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 
 // 50Hz × 32 = 640ms 버퍼. core 0 이 순간 바빠도(BLE 연결 수립 등) 샘플을 잃지 않는다.
 #define Q_SENSE_DEPTH 32
+
+// 명령은 사람이 앱에서 누르는 속도로만 온다. 8이면 충분하다.
+#define Q_CMD_DEPTH   8
 
 // 이 시간 동안 샘플이 한 개도 안 오면 센서 태스크가 멈춘 것으로 본다(데드맨).
 // 정상이면 20ms 마다 오므로 여유가 크다.

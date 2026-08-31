@@ -18,21 +18,21 @@
 #include "freertos/queue.h"
 
 // SenseUpdate.flags — 매 틱의 상태
-#define F_SETTLED  (1u << 0)   // 정착 구간이 끝나 판정이 유효하다
-#define F_SIGOK    (1u << 1)   // 신호가 살아 있다 (진폭이 MIN_AMP 이상)
+#define FLAG_SETTLED    (1u << 0)   // 정착 구간이 끝나 판정이 유효하다
+#define FLAG_SIGNAL_OK  (1u << 1)   // 신호가 살아 있다 (진폭이 MIN_AMP 이상)
 
 // SenseUpdate.events — 이번 틱에 확정된 이벤트. 0 이면 없음.
-#define E_INHALE   (1u << 0)
-#define E_EXHALE   (1u << 1)
-#define E_NOSIG    (1u << 2)
-#define E_SIGOK    (1u << 3)
+#define EVENT_INHALE       (1u << 0)
+#define EVENT_EXHALE       (1u << 1)
+#define EVENT_SIGNAL_LOST  (1u << 2)   // 시리얼로는 "# NOSIG" 로 나간다(규약)
+#define EVENT_SIGNAL_OK    (1u << 3)   // 시리얼로는 "# SIGOK" 로 나간다(규약)
 
 typedef struct {
-    uint32_t n;            // slope_update 후의 det.n (지금까지 처리한 샘플 수)
+    uint32_t n;            // slope_update 후의 detector.n (지금까지 처리한 샘플 수)
     int16_t  raw, mv;      // 이번 샘플의 원시값 (CSV 출력용)
 
     int8_t   phase;        // BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
-    uint8_t  flags;        // F_SETTLED | F_SIGOK
+    uint8_t  flags;        // FLAG_SETTLED | FLAG_SIGNAL_OK
     uint8_t  events;       // E_* 비트. 0 이면 이벤트 없음
     uint8_t  rate_ready;   // 1 이면 아래 rate_* 가 유효 (약 1초에 한 번)
     uint16_t drops;        // 큐가 차서 버린 틱 수. 정상 동작에서는 항상 0
@@ -51,7 +51,38 @@ typedef struct {
     uint32_t rate_avg_us, rate_min_us, rate_max_us;
 } SenseUpdate;
 
-// 센서 → 앱. 매 틱(50Hz) 스냅샷 하나.
-extern QueueHandle_t q_sense;
+// --- 앱 → 기기 방향의 계약 ---
+//
+// SenseUpdate 가 센서→앱의 유일한 통로이듯, 반대 방향도 통로를 하나만 둔다.
+// 시리얼 명령과 BLE write 가 같은 Command 로 수렴하므로, BLE 없이도 전체 명령
+// 경로를 시리얼로 테스트할 수 있다.
+//
+// 연결·해제까지 명령으로 흘려보내는 이유: app_task 가 모든 상태 변화를 한 곳에서
+// 같은 방식으로 받게 되고, BLE 콜백이 세우는 전역 플래그가 하나도 생기지 않는다.
+
+typedef enum {
+    CMD_NONE = 0,
+    CMD_BLE_CONNECTED,      // 콜백이 알린다 → app_task 가 스냅샷을 보낸다
+    CMD_BLE_DISCONNECTED,   // 1단계에서 여기에 모터 정지가 붙는다
+    CMD_MOTOR_ON,
+    CMD_MOTOR_OFF,
+    CMD_SET_DUTY,           // arg = 0~255
+    CMD_STATUS,             // 현재 상태를 다시 보내달라
+} CmdType;
+
+typedef enum {
+    SRC_SERIAL = 0,
+    SRC_BLE    = 1,
+} CmdSource;
+
+typedef struct {
+    CmdType   type;
+    CmdSource src;   // ACK 를 어디로 보낼지, 로그에 무엇으로 남길지
+    int32_t   arg;
+} Command;
+
+// --- 큐 ---
+extern QueueHandle_t q_sense;   // 센서 → 앱. 매 틱(50Hz) 스냅샷 하나
+extern QueueHandle_t q_cmd;     // 시리얼·BLE 콜백 → 앱. 드물게 오는 명령
 
 #endif  // APP_TYPES_H

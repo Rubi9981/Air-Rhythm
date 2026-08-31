@@ -23,6 +23,6 @@ void sense_start();
 // 출력을 대조 검증할 수 있고, (2) 나중에 획득을 타이머 ISR + 링버퍼로 옮길 때
 // 처리 쪽을 그대로 재사용할 수 있다.
 void sense_reset();                                        // 필터·검출기 초기화
-void sense_step(int16_t raw, int16_t mv, SenseUpdate *u);   // 한 샘플 처리
+void sense_step(int16_t raw, int16_t mv, SenseUpdate *pending);   // 한 샘플 처리
 
 #endif  // TASK_SENSE_H

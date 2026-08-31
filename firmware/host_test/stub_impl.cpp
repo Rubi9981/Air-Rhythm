@@ -27,3 +27,13 @@ QueueHandle_t xQueueCreate(unsigned,unsigned){return (QueueHandle_t)1;}
 BaseType_t xQueueSend(QueueHandle_t,const void*,TickType_t){return pdTRUE;}
 BaseType_t xQueueReceive(QueueHandle_t,void*,TickType_t){return pdTRUE;}
 QueueHandle_t q_sense = nullptr;
+
+// --- BLE 전송 계층 스텁 ---
+// 호스트 검증은 Serial 출력만 대조한다. link_ble.cpp 는 <BLEDevice.h> 가 필요해
+// 여기 넣지 않고, 인터페이스만 비워 둔다.
+#include "link_ble.h"
+void ble_init() {}
+void ble_tick() {}
+bool ble_is_connected() { return false; }
+void ble_send_line(const char *) {}
+QueueHandle_t q_cmd = nullptr;

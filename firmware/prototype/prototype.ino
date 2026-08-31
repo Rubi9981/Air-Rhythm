@@ -23,10 +23,12 @@
 
 #include "app_types.h"
 #include "board_config.h"
+#include "link_ble.h"
 #include "task_app.h"
 #include "task_sense.h"
 
 QueueHandle_t q_sense = nullptr;
+QueueHandle_t q_cmd   = nullptr;
 
 void setup() {
   Serial.begin(115200);
@@ -37,10 +39,17 @@ void setup() {
   // 돌고 loopTask 는 core 1 이며, sense_task 도 core 1 이다.
 
   q_sense = xQueueCreate(Q_SENSE_DEPTH, sizeof(SenseUpdate));
-  if (!q_sense) {
+  q_cmd   = xQueueCreate(Q_CMD_DEPTH,   sizeof(Command));
+  if (!q_sense || !q_cmd) {
     Serial.println("# FATAL queue");
     while (true) delay(1000);
   }
+
+  // 순서: 큐 → BLE → 태스크.
+  // BLE 콜백이 q_cmd 에 넣으므로 큐가 먼저 있어야 하고, app_task 는 BLE 가 준비된
+  // 뒤에 도는 편이 안전하다. ble_init() 이 길어져도 표본화 주기에는 영향이 없다 —
+  // sense_task 의 기준 시각은 태스크 진입부에서 잡는다.
+  ble_init();
 
   sense_start();
   app_start();

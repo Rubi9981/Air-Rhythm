@@ -10,6 +10,10 @@
 # 사용법:  sh firmware/host_test/run.sh
 # 저장소 최상위에서 실행할 것. 모든 CSV 에서 두 출력이 같으면 통과.
 #
+# 주의: drv_old 는 샘플 줄(raw<TAB>mv)을 항상 찍는다. 대조하려면
+#       board_config.h 의 REPORT_SAMPLE 이 true 여야 한다. false 인 채로 돌리면
+#       샘플 줄 전부가 차이로 잡히는데, 이건 회귀가 아니라 설정 차이다.
+#
 # 0단계가 끝나면 drv_old.cpp 는 지워도 된다(그때부터는 drv_new 의 출력을 직전
 # 커밋과 비교하는 방식이 더 유용하다).
 set -e
