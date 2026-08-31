@@ -39,19 +39,20 @@ typedef struct {
 #define BR_FALLING  (-1)
 #define BR_UNKNOWN  (0)
 
+// 각 필드의 자세한 뜻은 breath_slope.cpp 맨 위 "이름 풀이" 블록에 모아 두었다.
 typedef struct {
     uint32_t n;                 // 지금까지 처리한 샘플 수
-    int started;
+    int started;                // 첫 샘플로 상태를 시드했는가
 
-    bfloat sd;                  // 평활 기울기
-    bfloat avg_abs_sd;          // 평균|기울기|
-    bfloat y_prev;
-    bfloat env_hi, env_lo;      // 누설 포락선
+    bfloat sd;                  // 평활 기울기(mV/s). 검출 지연을 지배한다
+    bfloat avg_abs_sd;          // |sd| 의 장기 평균 — 적응형 문턱의 기준선
+    bfloat y_prev;              // 직전 샘플의 y(극성 보정 후) — 1차 차분용
+    bfloat env_hi, env_lo;      // 누설 포락선의 위/아래. amp = env_hi - env_lo
 
-    int phase;
-    bfloat ext_val, ext_yraw;   // 현재 구간의 극값
-    uint32_t ext_n;
-    uint32_t last_transition_n;
+    int phase;                  // BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
+    bfloat ext_val, ext_yraw;   // 현재 구간의 극값 (극성 보정 후 / 원본)
+    uint32_t ext_n;             // 그 극값의 샘플 번호. 검출 지연 = 확정 n - ext_n
+    uint32_t last_transition_n; // 마지막 전환 샘플 번호 — MIN_PHASE_N 잠금용
 
     int signal_ok;              // 무신호 판정 상태
 

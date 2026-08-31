@@ -2,6 +2,42 @@
 
 #include <math.h>
 
+// ---------------------------------------------------------------------------
+// 이름 풀이
+//
+// 이 파일의 짧은 이름들은 breath/detectors/slope.py 와 1:1로 맞춰 둔 것이다.
+// 한쪽만 바꾸면 두 구현을 나란히 놓고 읽을 수 없게 되고, 호스트 대조 검증의
+// 가치도 떨어진다. 그래서 이름은 그대로 두고 뜻을 여기 모아 둔다.
+//
+//   d          SlopeDetector*.  파이썬의 self 에 해당한다
+//
+//   y_raw      대역통과 출력 그대로. 이벤트에 실려 밖으로 나가는 값
+//   y          y_raw 에 POLARITY 를 곱한 값. 이 파일 안에서는 "상승 = 흡기"가
+//              항상 참이 되도록 극성을 맞춘 뒤 판단한다
+//   y_prev     직전 샘플의 y. 1차 차분에 쓴다
+//
+//   diff       (y - y_prev) / DT_S — 평활 전 순간 기울기 (mV/s)
+//   sd         smoothed derivative. diff 를 SLOPE_TAU_S 로 EMA 평활한 값.
+//              검출 지연을 지배하는 손잡이다
+//   avg_abs_sd |sd| 의 장기 평균(AVG_TAU_S). 적응형 문턱의 기준선
+//   k_sth      K_SLOPE × avg_abs_sd — 문턱의 적응형 항(하한 적용 전)
+//   sth        slope threshold. max(k_sth, SLOPE_FLOOR). 이번 샘플의 데드밴드
+//
+//   env_hi     누설 포락선의 위쪽. y 가 위로 벗어나면 즉시 따라가고,
+//   env_lo     아래쪽. 아니면 서로 서서히 좁혀온다(ENV_DECAY_S)
+//   amp0       포락선을 갱신하기 "전"의 진폭. 좁혀오는 양을 진폭에 비례시켜
+//              호흡이 커지든 작아지든 같은 속도로 수렴하게 한다
+//   amp        갱신 후 진폭(peak-to-peak) = env_hi - env_lo
+//   mid        포락선 중점 (env_hi + env_lo) / 2. MID_GATE 의 기준선.
+//              0 이 아니라 중점을 쓰는 이유는 env_lo <= y <= env_hi 라서
+//              y 가 매 호흡 반드시 중점을 가로지르기 때문이다(교착 불가)
+//
+//   ext_val    이번 구간의 극값(골 또는 마루)을 y 기준으로 담은 것
+//   ext_yraw   같은 극값을 y_raw 기준으로. 이벤트 보고용
+//   ext_n      그 극값이 나온 샘플 번호. 검출 지연 = 확정 n - ext_n
+//   since      마지막 전환 이후 지난 샘플 수. MIN_PHASE_N 잠금에 쓴다
+// ---------------------------------------------------------------------------
+
 void slope_init(SlopeDetector *d) {
     d->n = 0;
     d->started = 0;
@@ -178,37 +214,39 @@ bfloat slope_bpm(const SlopeDetector *d) {
     if (d->onset_count < 2) return (bfloat)0.0;
 
     // 링버퍼를 오래된 것부터 읽어 간격을 만들고, 범위 밖은 버린다.
-    uint32_t iv[ONSET_RING];
-    int m = 0;
-    const int cnt = d->onset_count;
-    const int start = (d->onset_count < ONSET_RING)
-                          ? 0
-                          : d->onset_head;  // 가장 오래된 위치
-    uint32_t prev = d->onsets[start % ONSET_RING];
-    for (int i = 1; i < cnt; i++) {
-        const uint32_t cur = d->onsets[(start + i) % ONSET_RING];
-        const uint32_t gap = cur - prev;
-        prev = cur;
-        if (gap >= RATE_MIN_N && gap <= RATE_MAX_N) iv[m++] = gap;
+    // 파이썬은 intervals = [b - a for a, b in zip(onsets, onsets[1:])] 한 줄이다.
+    uint32_t intervals[ONSET_RING];      // 걸러낸 흡기 간격(샘플 수)
+    int kept = 0;                        // intervals 에 실제로 담긴 개수
+    const int onset_count = d->onset_count;
+    const int oldest = (d->onset_count < ONSET_RING)
+                           ? 0
+                           : d->onset_head;  // 링버퍼에서 가장 오래된 위치
+    uint32_t prev_onset = d->onsets[oldest % ONSET_RING];
+    for (int i = 1; i < onset_count; i++) {
+        const uint32_t this_onset = d->onsets[(oldest + i) % ONSET_RING];
+        const uint32_t gap = this_onset - prev_onset;
+        prev_onset = this_onset;
+        if (gap >= RATE_MIN_N && gap <= RATE_MAX_N) intervals[kept++] = gap;
     }
-    if (m == 0) return (bfloat)0.0;
+    if (kept == 0) return (bfloat)0.0;
 
-    // 최근 RATE_WINDOW 개만 남긴다
-    int from = (m > RATE_WINDOW) ? (m - RATE_WINDOW) : 0;
-    int k = m - from;
-    uint32_t buf[RATE_WINDOW];
-    for (int i = 0; i < k; i++) buf[i] = iv[from + i];
+    // 최근 RATE_WINDOW 개만 남긴다 — 파이썬의 intervals[-rate_window:]
+    const int from = (kept > RATE_WINDOW) ? (kept - RATE_WINDOW) : 0;
+    const int window_n = kept - from;    // 중앙값을 낼 표본 수 (<= RATE_WINDOW)
+    uint32_t window[RATE_WINDOW];        // 최근 간격들 — 아래에서 정렬된다
+    for (int i = 0; i < window_n; i++) window[i] = intervals[from + i];
 
-    // 중앙값 (k <= 5 이므로 삽입정렬)
-    for (int i = 1; i < k; i++) {
-        const uint32_t v = buf[i];
+    // 중앙값 (window_n <= 5 이므로 삽입정렬)
+    for (int i = 1; i < window_n; i++) {
+        const uint32_t v = window[i];
         int j = i - 1;
-        while (j >= 0 && buf[j] > v) { buf[j + 1] = buf[j]; j--; }
-        buf[j + 1] = v;
+        while (j >= 0 && window[j] > v) { window[j + 1] = window[j]; j--; }
+        window[j + 1] = v;
     }
     // 파이썬 statistics.median: 짝수면 가운데 두 개의 평균
-    const bfloat med = (k % 2) ? (bfloat)buf[k / 2]
-                               : ((bfloat)buf[k / 2 - 1] + (bfloat)buf[k / 2]) * (bfloat)0.5;
-    if (med <= (bfloat)0.0) return (bfloat)0.0;
-    return (bfloat)60.0 * (bfloat)FS_HZ / med;
+    const bfloat median_gap = (window_n % 2)
+        ? (bfloat)window[window_n / 2]
+        : ((bfloat)window[window_n / 2 - 1] + (bfloat)window[window_n / 2]) * (bfloat)0.5;
+    if (median_gap <= (bfloat)0.0) return (bfloat)0.0;
+    return (bfloat)60.0 * (bfloat)FS_HZ / median_gap;
 }
