@@ -16,3 +16,4 @@ void analogReadResolution(uint8_t);
 void analogSetPinAttenuation(uint8_t, adc_attenuation_t);
 unsigned long micros(void);
 void delay(uint32_t);
+void rgbLedWrite(uint8_t pin, uint8_t r, uint8_t g, uint8_t b);

@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "act_indicator.h"
 #include "app_types.h"
 #include "board_config.h"
 #include "link_ble.h"
@@ -38,6 +39,8 @@ static void apply_command(const Command *cmd) {
         case CMD_MOTOR_ON:  app_state.motor_on = true;  msg_ack(cmd->src, cmd); break;
         case CMD_MOTOR_OFF: app_state.motor_on = false; msg_ack(cmd->src, cmd); break;
 
+        // 아래 default 로 빠지는 명령은 없다. 새 CmdType 을 추가하면 여기도 늘려야 한다.
+
         // 범위 검사는 cmd_parse() 가 이미 했다 — 잘못된 값은 여기까지 오지 않는다.
         case CMD_SET_DUTY:
             app_state.duty = (uint8_t)cmd->arg;
@@ -57,7 +60,12 @@ static void apply_command(const Command *cmd) {
 // 명령은 드물게 오므로 한 틱에 남은 것을 전부 비운다.
 static void drain_commands() {
     Command cmd;
-    while (xQueueReceive(q_cmd, &cmd, 0) == pdTRUE) apply_command(&cmd);
+    while (xQueueReceive(q_cmd, &cmd, 0) == pdTRUE) {
+        // 명령이 도착했다는 사실 자체를 LED 로 알린다. 명령의 성패와 무관하게
+        // "BLE 신호가 여기까지 왔다" 를 눈으로 확인하는 통로다.
+        indicator_flash(FLASH_CMD_OK);
+        apply_command(&cmd);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +80,8 @@ static void app_task(void *) {
         //       그건 # QDROP 으로 드러난다. 둘은 서로 다른 고장이다.
         if (xQueueReceive(q_sense, &sense, pdMS_TO_TICKS(SENSE_STALL_MS)) != pdTRUE) {
             msg_sense_stall();
+            const IndicatorState fault_ind = { 0, ble_is_connected(), false, false, true };
+            indicator_show(&fault_ind);
             // TODO(1단계): motor_set(0) — 센서가 죽었으면 무조건 정지
             continue;
         }
@@ -89,6 +99,17 @@ static void app_task(void *) {
         //   주의: 큐에 밀린 것이 많을 때는 오래된 phase 로 모터를 켜게 된다.
         //   액추에이터 판단만은 uxQueueMessagesWaiting() 이 0 일 때의 최신 sense 로 할 것.
         //   보고는 밀린 것도 순서대로 다 내보내면 된다.
+
+        // 액추에이터 출력 — 매 틱 재선언한다. 갱신이 끊기면 꺼지는 성질을
+        // 모터와 똑같이 갖게 하려는 것이다. 실제 LED 쓰기는 색이 바뀔 때만 일어난다.
+        const IndicatorState ind = {
+            .duty       = app_state.motor_on ? app_state.duty : (uint8_t)0,
+            .ble_linked = ble_is_connected(),
+            .settled    = (sense.flags & FLAG_SETTLED) != 0,
+            .signal_ok  = (sense.flags & FLAG_SIGNAL_OK) != 0,
+            .fault      = false,   // TODO(1단계): 결함 상태를 app_state 로 들고 올 것
+        };
+        indicator_show(&ind);
 
         msg_report(&sense);
     }

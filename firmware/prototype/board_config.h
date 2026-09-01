@@ -19,6 +19,13 @@ const bool REPORT_SAMPLE = false; // 'raw<TAB>mv' 샘플 줄. raw 값과 mv 값�
 static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
               "PERIOD_MS 와 breath_config.h 의 FS_HZ 가 어긋납니다");
 
+// --- 온보드 RGB LED (진단 표시) ---
+// ESP32-S3 개발보드의 WS2812 한 개. 모터 하드웨어가 오기 전까지 "BLE 명령이
+// 도착했는가" 를 눈으로 확인하는 창이고, 이후에도 진단 표시로 계속 쓴다.
+#define RGB_PIN        48
+#define RGB_MAX_LEVEL  40    // 0~255 중 상한. 온보드 LED 는 매우 밝고 전류도 먹는다
+#define FLASH_TICKS    5     // 명령 도착 플래시 지속 틱 (20ms × 5 = 100ms)
+
 // --- 태스크 배치 ---
 // 센서는 core 1 독점. BLE 스택은 기본 설정상 core 0 에 붙으므로 물리적으로 격리된다.
 #define SENSE_CORE      1

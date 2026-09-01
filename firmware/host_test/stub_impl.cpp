@@ -37,3 +37,4 @@ void ble_tick() {}
 bool ble_is_connected() { return false; }
 void ble_send_line(const char *) {}
 QueueHandle_t q_cmd = nullptr;
+void rgbLedWrite(uint8_t, uint8_t, uint8_t, uint8_t) {}

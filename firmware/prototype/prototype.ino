@@ -21,6 +21,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include "act_indicator.h"
 #include "app_types.h"
 #include "board_config.h"
 #include "link_ble.h"
@@ -37,6 +38,8 @@ void setup() {
 
   // ADC 설정과 실제 읽기가 같은 코어(core 1)에서 일어난다 — setup() 은 loopTask 에서
   // 돌고 loopTask 는 core 1 이며, sense_task 도 core 1 이다.
+
+  indicator_init();
 
   q_sense = xQueueCreate(Q_SENSE_DEPTH, sizeof(SenseUpdate));
   q_cmd   = xQueueCreate(Q_CMD_DEPTH,   sizeof(Command));
