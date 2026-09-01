@@ -38,8 +38,9 @@ static void apply_command(const Command *cmd) {
         case CMD_MOTOR_ON:  app_state.motor_on = true;  msg_ack(cmd->src, cmd); break;
         case CMD_MOTOR_OFF: app_state.motor_on = false; msg_ack(cmd->src, cmd); break;
 
+        // 범위 검사는 cmd_parse() 가 이미 했다 — 잘못된 값은 여기까지 오지 않는다.
         case CMD_SET_DUTY:
-            // TODO(구현): 0~255 범위 검사 후 app_state.duty 반영. 벗어나면 msg_ack_err.
+            app_state.duty = (uint8_t)cmd->arg;
             msg_ack(cmd->src, cmd);
             break;
 

@@ -13,9 +13,13 @@ bool cmd_parse(const char *line, Command *out) {
     // TODO(구현): 앞뒤 공백 제거, 대소문자 무시 비교, 다음 문법을 인식할 것
     //   "MOTOR ON"   → CMD_MOTOR_ON
     //   "MOTOR OFF"  → CMD_MOTOR_OFF
-    //   "DUTY 200"   → CMD_SET_DUTY,  arg = 200 (0~255 범위 검사)
+    //   "DUTY 200"   → CMD_SET_DUTY,  arg = 200
     //   "STATUS"     → CMD_STATUS
     // 인식 못 하면 false. out->src 는 호출자가 채운다.
+    //
+    // 값 검증도 여기서 끝낸다 — DUTY 는 0~255 를 벗어나면 false 를 돌려준다.
+    // 경계에서 거르면 app_task 는 "이미 유효한 명령"만 다루면 되고, 잘못된 값이
+    // 시스템 안으로 들어오는 경로가 하나도 없다.
     (void)line; (void)out;
     return false;
 }
