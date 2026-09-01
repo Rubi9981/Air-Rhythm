@@ -112,5 +112,5 @@ static void sense_task(void *) {
 void sense_start() {
     sense_reset();
     xTaskCreatePinnedToCore(sense_task, "sense", SENSE_STACK, nullptr,
-                            SENSE_PRIO, nullptr, SENSE_CORE);
+                            SENSE_PRIORITY, nullptr, SENSE_CORE);
 }

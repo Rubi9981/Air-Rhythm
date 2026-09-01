@@ -3,9 +3,9 @@
 // breath_monitor 의 단일 loop() 구조를 두 태스크로 나눈 것이다. 검출 로직
 // (breath_config.h / breath_filter.* / breath_slope.*)은 복사본이며 수정하지 않았다.
 //
-//   core 1  sense_task (prio 5)  ADC → 대역통과 → 검출 → q_sense        정확히 20ms
-//   core 0  app_task   (prio 2)  q_sense → 출력 (이후 모터·BLE)         큐가 페이싱
-//   core 1  loopTask   (prio 1)  재워둔다
+//   core 1  sense_task (priority 5)  ADC → 대역통과 → 검출 → q_sense        정확히 20ms
+//   core 0  app_task   (priority 2)  q_sense → 출력 (이후 모터·BLE)         큐가 페이싱
+//   core 1  loopTask   (priority 1)  재워둔다
 //
 // 왜 나눴는가: Serial.printf 는 115200 baud 에서 40자 한 줄이 약 3.5ms 이고 TX 버퍼가
 // 차면 블로킹한다. BLE 는 연결 이벤트 간격만큼 더 튄다. 이것들이 표본화 루프 안에

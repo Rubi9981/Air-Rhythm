@@ -96,5 +96,5 @@ static void app_task(void *) {
 
 void app_start() {
     xTaskCreatePinnedToCore(app_task, "app", APP_STACK, nullptr,
-                            APP_PRIO, nullptr, APP_CORE);
+                            APP_PRIORITY, nullptr, APP_CORE);
 }

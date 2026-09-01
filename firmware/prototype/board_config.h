@@ -21,13 +21,13 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 
 // --- 태스크 배치 ---
 // 센서는 core 1 독점. BLE 스택은 기본 설정상 core 0 에 붙으므로 물리적으로 격리된다.
-#define SENSE_CORE   1
-#define SENSE_PRIO   5
-#define SENSE_STACK  4096
+#define SENSE_CORE      1
+#define SENSE_PRIORITY  5
+#define SENSE_STACK     4096
 
-#define APP_CORE     0
-#define APP_PRIO     2
-#define APP_STACK    8192   // Serial.printf("%f") 의 부동소수 포맷팅 + 이후 BLE 대비
+#define APP_CORE        0
+#define APP_PRIORITY    2
+#define APP_STACK       8192   // Serial.printf("%f") 의 부동소수 포맷팅 + 이후 BLE 대비
 
 // 50Hz × 32 = 640ms 버퍼. core 0 이 순간 바빠도(BLE 연결 수립 등) 샘플을 잃지 않는다.
 #define Q_SENSE_DEPTH 32
