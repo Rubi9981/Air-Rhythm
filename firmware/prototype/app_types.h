@@ -27,26 +27,41 @@
 #define EVENT_SIGNAL_LOST  (1u << 2)   // 시리얼로는 "# NOSIG" 로 나간다(규약)
 #define EVENT_SIGNAL_OK    (1u << 3)   // 시리얼로는 "# SIGOK" 로 나간다(규약)
 
+// 필드는 네 갈래이고, 각 줄 앞의 [ ] 가 그 갈래를 표시한다. 1~2바이트 필드는
+// 정렬 패딩을 줄이려고 한데 모아 두었으므로 물리적 순서로는 갈래가 안 보인다.
+//
+//   [샘플]  이번 틱에 측정한 값
+//   [상태]  매 틱 새로 쓰인다 — 덮어쓰기형. 한 틱 못 보내도 다음 값이 더 정확하다
+//   [사건]  이번 틱에만 존재한다 — 누적형. 큐에 실릴 때까지 지우지 않는다
+//   [진단]  개발용. 1초에 한 번(rate_*) 또는 고장 시에만(drops) — 누적형
+//
+// 덮어쓰기형과 누적형을 가르는 기준은 "다음 틱에 다시 만들 수 있는가" 하나다.
+// detector 라는 상태 기계가 센서 태스크에 살아 있으므로 [상태] 는 언제든 다시
+// 물어볼 수 있지만, [사건] 은 slope_update 가 그 틱에 한 번 통보하고 끝이다.
+// task_sense.cpp 의 xQueueSend 성공 분기에서 누적형만 지우는 이유가 이것이다.
 typedef struct {
-    uint32_t n;            // slope_update 후의 detector.n (지금까지 처리한 샘플 수)
-    int16_t  raw, mv;      // 이번 샘플의 원시값 (CSV 출력용)
+    uint32_t n;            // [샘플] slope_update 후의 detector.n (지금까지 처리한 샘플 수)
+    int16_t  raw, mv;      // [샘플] 이번 샘플의 원시값 (CSV 출력용)
 
-    int8_t   phase;        // BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
-    uint8_t  flags;        // FLAG_SETTLED | FLAG_SIGNAL_OK
-    uint8_t  events;       // E_* 비트. 0 이면 이벤트 없음
-    uint8_t  rate_ready;   // 1 이면 아래 rate_* 가 유효 (약 1초에 한 번)
-    uint16_t drops;        // 큐가 차서 버린 틱 수. 정상 동작에서는 항상 0
+    int8_t   phase;        // [상태] BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
+    uint8_t  flags;        // [상태] FLAG_SETTLED | FLAG_SIGNAL_OK
+    uint8_t  events;       // [사건] EVENT_* 비트. 0 이면 이벤트 없음
+    uint8_t  rate_ready;   // [진단] 1 이면 아래 rate_* 가 유효 (약 1초에 한 번)
+    uint16_t drops;        // [진단] 큐가 차서 버린 틱 수. 정상 동작에서는 항상 0
 
-    // events != 0 일 때만 의미가 있다.
-    // ev_n 은 det.n 과 다르다 — slope_update 가 반환 직전에 d->n++ 하기 때문.
+    // [사건] 아래 셋은 events != 0 일 때만 의미가 있다. events 가 유효성 플래그
+    // 역할을 하므로, 이벤트가 없는 틱에 옛 값이 남아 있어도 무해하다.
+    // ev_n 은 detector.n 과 다르다 — slope_update 가 반환 직전에 d->n++ 하기 때문.
     // 지연 계산은 반드시 (ev_n - ext_n) 이어야 한다.
     uint32_t ev_n;         // 이벤트 확정 샘플
     uint32_t ext_n;        // 그 이벤트의 극점 샘플
     float    ev_amp;       // 이벤트 시점의 추정 진폭 (NOSIG/SIGOK 출력용)
 
-    float    amp;          // 현재 추정 진폭(p-p)
-    float    bpm;          // 분당 호흡수. 판정 불가면 0
+    float    amp;          // [상태] 현재 추정 진폭(p-p)
+    float    bpm;          // [상태] 분당 호흡수. 판정 불가면 0
 
+    // [진단] rate_ready 가 1 일 때만 유효. 표본화 주기가 흔들리는지 보는 지표로,
+    // avg 가 20000µs 에 붙고 min/max 가 그 근처면 정상이다.
     float    rate_fs;      // 실측 표본화 주파수
     uint32_t rate_avg_us, rate_min_us, rate_max_us;
 } SenseUpdate;
