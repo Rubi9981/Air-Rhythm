@@ -4,7 +4,20 @@ __pycache__/
 # macOS 폴더 메타데이터
 .DS_Store
 
-data
+# 측정 CSV — breath_* 만 공유한다. host_test(run.sh / golden.sh)의 입력이라
+# 저장소에 없으면 다른 사람이 검증을 돌릴 수 없다.
+# 사람 이름이 붙은 파일은 개인 데이터라 올리지 않는다.
+#
+# 'data' 가 아니라 'data/*' 인 이유: 부모 디렉토리를 통째로 제외하면 그 안의
+# 파일을 '!' 로 되살릴 수 없다. git 이 디렉토리 안으로 들어가야 예외가 먹는다.
+data/*
+!data/breath_*.csv
+
+# 골든은 data/ 와 짝이다. 입력 CSV 가 공유되지 않는 녹음의 골든은 검증할 수 없으므로
+# 저장소에 두지 않는다. 로컬에서는 golden.sh --update 로 언제든 다시 만들 수 있다.
+firmware/host_test/golden/*
+!firmware/host_test/golden/breath_*.txt
+
 images
 legacy
 reference
