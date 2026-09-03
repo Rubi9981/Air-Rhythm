@@ -21,6 +21,8 @@
 #ifndef LINK_MSG_H
 #define LINK_MSG_H
 
+#include <stdint.h>
+
 #include "app_types.h"
 
 // 어디로 보낼지. 샘플 줄처럼 50Hz 로 나가는 것은 절대 BLE 로 보내지 않는다
@@ -35,18 +37,22 @@ typedef enum {
 void msg_emit(MsgSink to, const char *line);
 void msg_emitf(MsgSink to, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 
-// 한 틱치 스냅샷을 규약대로 출력한다. 줄 순서는 0단계와 같다.
+// 한 틱치 스냅샷을 규약대로 출력한다 (시리얼 디버그용 텍스트).
 void msg_report(const SenseUpdate *sense);
 
 // 센서 태스크에서 SENSE_STALL_MS 동안 샘플이 오지 않았다.
 void msg_sense_stall();
 
+// --- 12바이트 바이너리 텔레메트리 (BLE 전용) ---
+// app_task 가 TELEMETRY_INTERVAL_MS 마다 호출한다.
+void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
+                        bool motorActive, uint16_t currentPeriodMs);
+
 // --- 명령 응답 ---
-// 앱 UI 가 낙관적 업데이트에 의존하지 않도록 모든 명령에 답한다.
-void msg_ack(CmdSource src, const Command *c);          // "OK MOTOR ON"
-void msg_ack_err(CmdSource src, const char *why);       // "ERR unknown"
+void msg_ack(CmdSource src, const Command *c);
+void msg_ack_err(CmdSource src, const char *why);
 
 // 연결 직후 / CMD_STATUS 응답. 앱이 재연결했을 때 현재 상태를 즉시 그릴 수 있어야 한다.
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty);
+void msg_snapshot(const SenseUpdate *sense, bool motor_running, uint16_t period_ms);
 
 #endif  // LINK_MSG_H

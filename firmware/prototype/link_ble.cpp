@@ -1,83 +1,151 @@
+/**
+ * ============================================================================
+ * [link_ble.cpp] BLE 전송 계층 구현체 (NimBLE-Arduino 기반)
+ * ============================================================================
+ *
+ * 역할:
+ *   - NimBLE GATT Server 운영 (Advertising, Service, Characteristic)
+ *   - 앱으로부터 8바이트 제어 명령 수신 (Write) -> Command 큐(q_cmd)로 전달
+ *   - 12바이트 텔레메트리 패킷(Notify) 및 진단 텍스트 전송
+ *
+ * 주요 규칙:
+ *   - BLE 콜백 함수 내에서는 절대 모터나 센서 하드웨어 상태를 직접 제어하지 않음.
+ *   - 모든 수신 데이터는 cmd_parse_packet() 거쳐 cmd_submit()을 통해 app_task로 전달됨.
+ *   - 센서 루프(Core 1) 방해를 막기 위해 본딩(Bonding)은 비활성화 상태 유지.
+ * ============================================================================
+ */
+
 #include "link_ble.h"
 
-#include <Arduino.h>
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
+#include <NimBLEDevice.h>
 
 #include "app_types.h"
 #include "link_cmd.h"
 
-// TODO(구현): 프로젝트 전용 UUID 로 교체할 것
-#define SVC_UUID  "0000fff0-0000-1000-8000-00805f9b34fb"
-#define TX_UUID   "0000fff1-0000-1000-8000-00805f9b34fb"   // notify  기기 → 앱
-#define RX_UUID   "0000fff2-0000-1000-8000-00805f9b34fb"   // write   앱 → 기기
+// ============================================================================
+// [BLE UUID 및 설정 정의] - Android 앱 (BleUuids)과 100% 일치
+// ============================================================================
+#define DEVICE_NAME  "RespiSync_Vest"
+#define SVC_UUID     "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define TX_UUID      "ba000001-36e1-4688-b7f5-ea07361b26a8"   // Notify (ESP32 -> App)
+#define RX_UUID      "beb5483e-36e1-4688-b7f5-ea07361b26a8"   // Write  (App -> ESP32)
 
-static BLEServer         *server = nullptr;
-static BLECharacteristic *tx_char = nullptr;
+// ============================================================================
+// [내부 전역 변수]
+// ============================================================================
+static NimBLEServer         *s_server  = nullptr;
+static NimBLECharacteristic *s_tx_char = nullptr;
 
-// 콜백(BLE 스택 태스크)이 쓰고 ble_tick(app_task)이 읽는다.
-// 여기 있는 것만이 이 계층의 유일한 공유 상태이며, 전부 volatile 단일 플래그다.
-static volatile bool ble_connected      = false;
-static volatile bool want_advertise = false;
+// BLE 스택(Core 0) 콜백이 쓰고 app_task(Core 0)가 읽는 단일 플래그
+static volatile bool s_ble_connected   = false;
+static volatile bool s_want_advertise  = false;
 
-// ---------------------------------------------------------------------------
-// 콜백 — 파싱과 플래그 세우기만. 여기서 아무것도 소유하지 않는다.
-// ---------------------------------------------------------------------------
+// ============================================================================
+// [GATT Server 콜백 클래스] - 연결 / 해제 이벤트 처리
+// ============================================================================
+class ServerCallbacks : public NimBLEServerCallbacks {
+    void onConnect(NimBLEServer *pServer) override {
+        (void)pServer;
+        s_ble_connected = true;
 
-class ServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer *) override {
-        ble_connected = true;
+        // 연결 이벤트 알림 명령을 app_task로 전송 (스냅샷 회신 목적)
         Command cmd = { CMD_BLE_CONNECTED, SRC_BLE, 0 };
-        cmd_submit(&cmd);                 // 스냅샷 전송은 app_task 가 한다
+        cmd_submit(&cmd);
     }
-    void onDisconnect(BLEServer *) override {
-        ble_connected = false;
-        want_advertise = true;          // ★ 여기서 startAdvertising() 하지 않는다
+
+    void onDisconnect(NimBLEServer *pServer) override {
+        (void)pServer;
+        s_ble_connected = false;
+        s_want_advertise = true; // 재광고는 콜백이 아닌 ble_tick()에서 안전하게 수행
+
+        // 연결 끊김 이벤트 명령을 app_task로 전송 (Fail-Safe 긴급 정지 트리거)
         Command cmd = { CMD_BLE_DISCONNECTED, SRC_BLE, 0 };
         cmd_submit(&cmd);
     }
 };
 
-class RxWriteCallbacks : public BLECharacteristicCallbacks {
-    void onWrite(BLECharacteristic *characteristic) override {
-        // TODO(구현):
-        //   1. characteristic->getValue() 를 널 종단 문자열로 복사 (길이 상한을 둘 것)
-        //   2. cmd_parse() 로 Command 로 바꾼다
-        //   3. src = SRC_BLE 로 채우고 cmd_submit()
-        //   4. 파싱 실패해도 여기서 응답하지 않는다 — ACK 는 app_task 담당
-        // 이 함수 안에서 모드·모터·전역 상태를 건드리지 말 것.
-        (void)characteristic;
+// ============================================================================
+// [GATT Characteristic 콜백 클래스] - 앱 Write 명령 수신 처리
+// ============================================================================
+class RxWriteCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *pCharacteristic) override {
+        std::string rxData = pCharacteristic->getValue();
+        const uint8_t *pkt = (const uint8_t *)rxData.data();
+        size_t len = rxData.length();
+
+        // 8바이트 바이너리 패킷 파싱 후 큐에 전달
+        Command cmd = {};
+        if (cmd_parse_packet(pkt, len, &cmd)) {
+            cmd.src = SRC_BLE;
+            cmd_submit(&cmd);
+        }
+        // *주의*: 파싱 실패 시 응답(ACK/ERR) 및 하드웨어 제어는 여기서 하지 않고 app_task가 전담.
     }
 };
 
-// ---------------------------------------------------------------------------
+// ============================================================================
+// [외부 인터페이스 함수 구현]
+// ============================================================================
 
 void ble_init() {
-    // TODO(구현):
-    //   BLEDevice::init("...");  BLEDevice::setMTU(185);
-    //   server = BLEDevice::createServer();  server->setCallbacks(new ServerCallbacks());
-    //   서비스 생성 → tx_char(NOTIFY) / rx(WRITE) 특성 추가 → rx->setCallbacks(new RxWriteCallbacks())
-    //   tx_char->addDescriptor(new BLE2902());
-    //   서비스 start() → 광고 파라미터 설정 → BLEDevice::startAdvertising()
-    //
-    //   보안: 본딩을 켜지 말 것 (헤더 주석 4번). 페어링 없이 열어둔다.
+    // 1. NimBLE 디바이스 초기화 및 송신 출력 설정 (+9dBm)
+    NimBLEDevice::init(DEVICE_NAME);
+    NimBLEDevice::setMTU(185);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+
+    // *보안 설정*: 본딩 키 기록으로 인한 Flash NVS 쓰기 블로킹(Core 1 정지) 원천 방지
+    NimBLEDevice::setSecurityAuth(false, false, false);
+
+    // 2. Server 생성 및 콜백 등록
+    s_server = NimBLEDevice::createServer();
+    s_server->setCallbacks(new ServerCallbacks());
+
+    // 3. Service 생성
+    NimBLEService *pService = s_server->createService(SVC_UUID);
+
+    // 4. TX Characteristic (Notify, ESP32 -> App) 생성 (CCCD 자동 등록됨)
+    s_tx_char = pService->createCharacteristic(
+        TX_UUID,
+        NIMBLE_PROPERTY::NOTIFY
+    );
+
+    // 5. RX Characteristic (Write / WriteNR, App -> ESP32) 생성 및 콜백 등록
+    NimBLECharacteristic *pRxChar = pService->createCharacteristic(
+        RX_UUID,
+        NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
+    );
+    pRxChar->setCallbacks(new RxWriteCallbacks());
+
+    // 6. Service 시작
+    pService->start();
+
+    // 7. Advertising 시작
+    NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SVC_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->start();
 }
 
 void ble_tick() {
-    if (want_advertise) {
-        want_advertise = false;
-        // TODO(구현): BLEDevice::startAdvertising();
-        // 필요하면 해제 직후 잠깐 텀을 두도록 만들 것 (틱 카운터로).
+    // 연결 해제 후 재광고 요청 처리 (Non-blocking)
+    if (s_want_advertise) {
+        s_want_advertise = false;
+        NimBLEDevice::startAdvertising();
     }
 }
 
-bool ble_is_connected() { return ble_connected; }
+bool ble_is_connected() {
+    return s_ble_connected;
+}
 
 void ble_send_line(const char *line) {
-    if (!ble_connected || !tx_char) return;      // 미연결이면 조용히 버린다
-    // TODO(구현): tx_char->setValue((uint8_t*)line, strlen(line)); tx_char->notify();
-    //   호출자가 이미 sink 를 골라 부르므로 여기서 빈도 제한을 하지 않는다.
-    (void)line;
+    if (!s_ble_connected || !s_tx_char || line == nullptr) return;
+    s_tx_char->setValue((const uint8_t *)line, strlen(line));
+    s_tx_char->notify();
+}
+
+void ble_send_telemetry(const uint8_t *pkt, size_t len) {
+    if (!s_ble_connected || !s_tx_char || pkt == nullptr || len == 0) return;
+    s_tx_char->setValue(pkt, len);
+    s_tx_char->notify();
 }

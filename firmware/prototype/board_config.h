@@ -14,7 +14,7 @@ const int SENSOR_PIN = 4;        // ADC1 채널 GPIO. WiFi 쓸 거면 반드시 
 const uint32_t PERIOD_MS = 20;   // 표본화 주기 → 50Hz. breath_config.h 의 FS_HZ 와 짝
 const int ADC_AVG_COUNT = 16;            // mV 평균 횟수(약 1.9ms). 줄이면 기울기 검출의 노이즈 여유가 준다
 const bool REPORT_RATE = true;   // 1초마다 '# fs=...' 진단 줄. 측정이 끝나면 false 로
-const bool REPORT_SAMPLE = false; // 'raw<TAB>mv' 샘플 줄. raw 값과 mv 값을 확인할 때 true. 일반적으로 false.
+const bool REPORT_SAMPLE = true; // 'raw<TAB>mv' 샘플 줄. 호스트 검증(run.sh) 시 true 필요.
 
 static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
               "PERIOD_MS 와 breath_config.h 의 FS_HZ 가 어긋납니다");

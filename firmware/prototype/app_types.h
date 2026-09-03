@@ -78,10 +78,12 @@ typedef struct {
 typedef enum {
     CMD_NONE = 0,
     CMD_BLE_CONNECTED,      // 콜백이 알린다 → app_task 가 스냅샷을 보낸다
-    CMD_BLE_DISCONNECTED,   // 1단계에서 여기에 모터 정지가 붙는다
-    CMD_MOTOR_ON,
-    CMD_MOTOR_OFF,
-    CMD_SET_DUTY,           // arg = 0~255
+    CMD_BLE_DISCONNECTED,   // Fail-Safe: 모터 정지 + STATE_IDLE
+    CMD_START,              // arg = strikePeriodMs (200~2000). 타격 시작
+    CMD_STOP,               // 정상 정지
+    CMD_EMERGENCY_STOP,     // 긴급 정지 — 즉시 모터 OFF
+    CMD_SET_PERIOD,         // arg = strikePeriodMs (200~2000, 동작 중 변경)
+    CMD_CALIBRATE,          // 캘리브레이션 모드 진입
     CMD_STATUS,             // 현재 상태를 다시 보내달라
 } CmdType;
 

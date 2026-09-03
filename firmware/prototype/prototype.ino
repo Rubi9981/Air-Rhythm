@@ -35,6 +35,10 @@ void setup() {
   analogReadResolution(12);                       // 기본 12비트(0~4095)
   analogSetPinAttenuation(SENSOR_PIN, ADC_6db);   // 0~1750mV (ESP32-S3)
 
+  // TODO(보드 수령 후): 모터 핀 초기화
+  // pinMode(PIN_MOTOR, OUTPUT);
+  // digitalWrite(PIN_MOTOR, LOW);  // 시작 시 OFF 보장
+
   // ADC 설정과 실제 읽기가 같은 코어(core 1)에서 일어난다 — setup() 은 loopTask 에서
   // 돌고 loopTask 는 core 1 이며, sense_task 도 core 1 이다.
 
