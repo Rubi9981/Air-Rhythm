@@ -44,8 +44,9 @@ static volatile bool s_want_advertise  = false;
 // [GATT Server 콜백 클래스] - 연결 / 해제 이벤트 처리
 // ============================================================================
 class ServerCallbacks : public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer *pServer) override {
+    void onConnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo) override {
         (void)pServer;
+        (void)connInfo;
         s_ble_connected = true;
 
         // 연결 이벤트 알림 명령을 app_task로 전송 (스냅샷 회신 목적)
@@ -53,8 +54,10 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         cmd_submit(&cmd);
     }
 
-    void onDisconnect(NimBLEServer *pServer) override {
+    void onDisconnect(NimBLEServer *pServer, NimBLEConnInfo &connInfo, int reason) override {
         (void)pServer;
+        (void)connInfo;
+        (void)reason;
         s_ble_connected = false;
         s_want_advertise = true; // 재광고는 콜백이 아닌 ble_tick()에서 안전하게 수행
 
@@ -68,7 +71,8 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 // [GATT Characteristic 콜백 클래스] - 앱 Write 명령 수신 처리
 // ============================================================================
 class RxWriteCallbacks : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic) override {
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) override {
+        (void)connInfo;
         std::string rxData = pCharacteristic->getValue();
         const uint8_t *pkt = (const uint8_t *)rxData.data();
         size_t len = rxData.length();
@@ -122,7 +126,7 @@ void ble_init() {
     // 7. Advertising 시작
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SVC_UUID);
-    pAdvertising->setScanResponse(true);
+    pAdvertising->enableScanResponse(true);
     pAdvertising->start();
 }
 
