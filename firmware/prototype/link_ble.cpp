@@ -8,6 +8,15 @@
  *   - 앱으로부터 8바이트 제어 명령 수신 (Write) -> Command 큐(q_cmd)로 전달
  *   - 12바이트 텔레메트리 패킷(Notify) 및 진단 텍스트 전송
  *
+ * 필요 라이브러리:
+ *   NimBLE-Arduino (h2zero) 2.x — 검증에 쓴 버전은 2.5.1.
+ *   1.x 와는 API 가 호환되지 않는다. 1.x 로 빌드하면 컴파일이 깨진다:
+ *     - 2.x 의 onConnect/onDisconnect/onWrite 는 NimBLEConnInfo& 를 함께 받는다
+ *     - setScanResponse() 가 enableScanResponse() 로 바뀌었다
+ *     - setPower() 가 ESP_PWR_LVL_* 열거형이 아니라 dBm 정수를 받는다
+ *   라이브러리 매니저에서 "NimBLE-Arduino" 설치. ESP32 코어 3.3.11 에서 확인.
+ *   (docs/1.x_to2.x_migration_guide.md 가 라이브러리에 같이 들어 있다)
+ *
  * 주요 규칙:
  *   - BLE 콜백 함수 내에서는 절대 모터나 센서 하드웨어 상태를 직접 제어하지 않음.
  *   - 모든 수신 데이터는 cmd_parse_packet() 거쳐 cmd_submit()을 통해 app_task로 전달됨.
@@ -95,7 +104,7 @@ void ble_init() {
     // 1. NimBLE 디바이스 초기화 및 송신 출력 설정 (+9dBm)
     NimBLEDevice::init(DEVICE_NAME);
     NimBLEDevice::setMTU(185);
-    NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+    NimBLEDevice::setPower(ESP_PWR_LVL_P9); // setPower 함수의 인자로 넣는 열거형 변수 사라짐, 원하는 dB로 단순 숫자 작성
 
     // *보안 설정*: 본딩 키 기록으로 인한 Flash NVS 쓰기 블로킹(Core 1 정지) 원천 방지
     NimBLEDevice::setSecurityAuth(false, false, false);
@@ -121,7 +130,7 @@ void ble_init() {
     pRxChar->setCallbacks(new RxWriteCallbacks());
 
     // 6. Service 시작
-    pService->start();
+    pService->start();  // 이 줄은 동작 안함
 
     // 7. Advertising 시작
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
