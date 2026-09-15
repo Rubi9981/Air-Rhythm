@@ -19,6 +19,39 @@ const bool REPORT_SAMPLE = false; // 'raw<TAB>mv' 샘플 줄. raw 값과 mv 값�
 static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
               "PERIOD_MS 와 breath_config.h 의 FS_HZ 가 어긋납니다");
 
+// --- 타진 모터 (BL3640N BLDC + Nidec BLC-20 컨트롤러) ---
+// BLC-20 은 정류(commutation)를 하지 않는다. 정류는 모터에 내장된 드라이버가 홀센서를
+// 보고 알아서 하고, 여기서 내보내는 PWM 은 "목표 속도" 를 듀티로 인코딩한 지령이다.
+// 그래서 이 핀의 20kHz 는 모터를 켰다 끄는 주파수가 아니다.
+#define PIN_MOTOR_PWM    5       // BLC-20 PWM 입력
+#define PIN_MOTOR_BRAKE  7       // BLC-20 BRAKE 입력
+#define MOTOR_PWM_HZ     20000   // BLC-20 규격. 가청 대역 위라 조끼에서 소음이 나지 않는다
+#define MOTOR_PWM_BITS   8       // duty 0~255
+
+// ★ BLC-20 의 PWM 은 역논리다 — HIGH 가 정지, LOW 가 최대 속도.
+// 아두이노 예제(Timer1, TOP=400)가 정지에 OCR1A=400(상시 HIGH)을 주는 것으로 확인했다.
+// 그래서 LEDC 출력을 하드웨어 반전시킨다. 덕분에 motor_set() 쪽 의미는 그대로다
+// (duty 0 = 정지, 255 = 최대). 반전은 act_motor.cpp 의 motor_init() 에서 건다.
+#define MOTOR_PWM_INVERTED  true
+
+// BRAKE 극성 — 실측 확인됨(아두이노 예제로 검증).
+// 아두이노 코드가 brkPin 을 LOW 로 놓은 채 모터를 돌리므로 LOW 가 "해제" 다.
+#define MOTOR_BRAKE_ON   HIGH
+#define MOTOR_BRAKE_OFF  LOW
+
+// 루프백 자가진단용 입력 핀. 계측기가 없을 때 PWM 이 실제로 핀에서 나가는지
+// 확인하는 통로다. 점퍼선으로 PIN_MOTOR_PWM → 이 핀을 이어주고 SELFTEST 를 친다.
+// 평소에는 아무것도 연결하지 않아도 되고, 연결해도 동작에 영향이 없다.
+#define PIN_MOTOR_PWM_LOOPBACK    15
+#define PIN_MOTOR_BRAKE_LOOPBACK  16
+#define SELFTEST_WINDOW_MS        20   // 20kHz 기준 400주기. 이 동안 app_task 가 멈춘다
+
+// DIR 은 하드웨어에서 VCC 에 고정한다 — 아두이노 예제가 정방향에 HIGH 를 준다.
+// 이 펌웨어는 방향을 바꾸지 않는다.
+//
+// 주의: BLDC 는 어느 듀티 아래로는 아예 돌지 않는다(약 15% = 38 부근으로 추정).
+// 그 하한을 실측하는 것이 이 단계의 목적이므로 코드에서 클램프하지 않는다.
+
 // --- 태스크 배치 ---
 // 센서는 core 1 독점. BLE 스택은 기본 설정상 core 0 에 붙으므로 물리적으로 격리된다.
 #define SENSE_CORE      1

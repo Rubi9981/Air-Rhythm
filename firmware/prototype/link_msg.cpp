@@ -104,9 +104,14 @@ void msg_sense_stall() {
 static MsgSink sink_of(CmdSource src) { return src == SRC_BLE ? SINK_BLE : SINK_SERIAL; }
 
 void msg_ack(CmdSource src, const Command *cmd) {
-    // TODO(구현): "OK MOTOR ON" / "OK DUTY 200" 형태.
-    //   cmd_name(cmd->type) 를 쓰고, 인자가 있는 명령은 값도 붙일 것.
-    (void)src; (void)cmd;
+    if (!cmd) return;
+
+    // 인자를 붙일지는 명령의 종류로 정한다. 값이 0 인지로 판단하면
+    // "DUTY 0" 의 답이 "OK DUTY" 가 되어 버린다 — 0 도 유효한 값이다.
+    if (cmd->type == CMD_SET_DUTY)
+        msg_emitf(sink_of(src), "OK %s %ld", cmd_name(cmd->type), (long)cmd->arg);
+    else
+        msg_emitf(sink_of(src), "OK %s", cmd_name(cmd->type));
 }
 
 void msg_ack_err(CmdSource src, const char *why) {
@@ -114,8 +119,14 @@ void msg_ack_err(CmdSource src, const char *why) {
 }
 
 void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty) {
-    // TODO(구현): 연결 직후와 CMD_STATUS 에 답하는 한 줄.
-    //   예) "STATE motor=on duty=200 bpm=15.2 amp=24.4 settled=1 sig=1"
-    //   앱이 재연결했을 때 이 한 줄로 현재 화면을 다시 그릴 수 있어야 한다.
-    (void)sense; (void)motor_on; (void)duty;
+    if (!sense) return;
+
+    // 한 줄로 현재 상태 전부. 앱이 재연결했을 때 이 줄만으로 화면을 다시 그릴 수 있어야 한다.
+    msg_emitf(SINK_BOTH, "STATE motor=%s duty=%u bpm=%.1f amp=%.1f settled=%d sig=%d",
+              motor_on ? "on" : "off",
+              (unsigned)duty,
+              sense->bpm,
+              sense->amp,
+              (sense->flags & FLAG_SETTLED)   ? 1 : 0,
+              (sense->flags & FLAG_SIGNAL_OK) ? 1 : 0);
 }

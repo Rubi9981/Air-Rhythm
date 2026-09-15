@@ -21,6 +21,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
+#include "act_motor.h"
 #include "app_types.h"
 #include "board_config.h"
 #include "link_ble.h"
@@ -34,6 +35,9 @@ void setup() {
   Serial.begin(115200);
   analogReadResolution(12);                       // 기본 12비트(0~4095)
   analogSetPinAttenuation(SENSOR_PIN, ADC_6db);   // 0~1750mV (ESP32-S3)
+
+  // 모터를 가장 먼저 확정한다 — 부팅 중 어떤 경로로도 돌지 않게.
+  motor_init();
 
   // ADC 설정과 실제 읽기가 같은 코어(core 1)에서 일어난다 — setup() 은 loopTask 에서
   // 돌고 loopTask 는 core 1 이며, sense_task 도 core 1 이다.

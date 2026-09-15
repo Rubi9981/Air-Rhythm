@@ -83,6 +83,7 @@ typedef enum {
     CMD_MOTOR_OFF,
     CMD_SET_DUTY,           // arg = 0~255
     CMD_STATUS,             // 현재 상태를 다시 보내달라
+    CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용)
 } CmdType;
 
 typedef enum {

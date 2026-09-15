@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "act_motor.h"
 #include "app_types.h"
 #include "board_config.h"
 #include "link_ble.h"
@@ -48,6 +49,11 @@ static void apply_command(const Command *cmd) {
             msg_snapshot(&latest_sense, app_state.motor_on, app_state.duty);
             break;
 
+        // 배선 검증용. 창(窓) 동안 이 루프가 멈추므로 24V 를 넣기 전에만 쓴다.
+        case CMD_SELFTEST:
+            motor_selftest();
+            break;
+
         default:
             msg_ack_err(cmd->src, "unknown");
             break;
@@ -72,7 +78,7 @@ static void app_task(void *) {
         //       그건 # QDROP 으로 드러난다. 둘은 서로 다른 고장이다.
         if (xQueueReceive(q_sense, &sense, pdMS_TO_TICKS(SENSE_STALL_MS)) != pdTRUE) {
             msg_sense_stall();
-            // TODO(1단계): motor_set(0) — 센서가 죽었으면 무조건 정지
+            motor_set(0);          // 센서가 죽었으면 무조건 정지
             continue;
         }
         latest_sense = sense;
@@ -89,6 +95,13 @@ static void app_task(void *) {
         //   주의: 큐에 밀린 것이 많을 때는 오래된 phase 로 모터를 켜게 된다.
         //   액추에이터 판단만은 uxQueueMessagesWaiting() 이 0 일 때의 최신 sense 로 할 것.
         //   보고는 밀린 것도 순서대로 다 내보내면 된다.
+
+        // 액추에이터 출력 — 매 틱 재선언한다. 이 호출이 끊기면 모터가 저절로 멈추므로
+        // 루프 구조 자체가 워치독이 된다(act_motor.h 참조).
+        //
+        // 이 단계에서는 호흡 위상을 보지 않는다. 시리얼 명령대로만 돈다.
+        // 호기 구간 동기화와 안전 중재는 위 TODO(1단계) 자리에 들어갈 다음 작업이다.
+        motor_set(app_state.motor_on ? app_state.duty : (uint8_t)0);
 
         msg_report(&sense);
     }

@@ -37,3 +37,9 @@ void ble_tick() {}
 bool ble_is_connected() { return false; }
 void ble_send_line(const char *) {}
 QueueHandle_t q_cmd = nullptr;
+
+// --- 명령 파서 스텁 ---
+// run.sh 는 link_msg.cpp 를 링크하지만 link_cmd.cpp 는 링크하지 않는다.
+// msg_ack() 가 cmd_name() 을 부르므로 이게 없으면 undefined reference 가 난다.
+#include "link_cmd.h"
+const char *cmd_name(CmdType) { return "?"; }
