@@ -6,6 +6,7 @@
 #include "act_motor.h"
 #include "app_types.h"
 #include "board_config.h"
+#include "breath_slope.h"   // BR_RISING(흡기) / BR_FALLING(호기) / BR_UNKNOWN
 #include "link_ble.h"
 #include "link_cmd.h"
 #include "link_msg.h"
@@ -23,12 +24,49 @@ typedef struct {
 static AppState    app_state    = { false, 0 };
 static SenseUpdate latest_sense = {};   // 스냅샷 응답용 — 마지막으로 받은 센서 상태
 
+// 마지막 게이트 판단의 이유. STATE 줄에 실어 "왜 안 도는지" 를 바로 보이게 한다.
+static const char *gate_reason = "off";
+
+// ---------------------------------------------------------------------------
+// 중재 — 호기 구간에만 타진한다.
+//
+// 매 틱 처음부터 다시 판단한다. 이전 틱의 결정을 물려받지 않으므로 상태가
+// 어긋난 채 남을 수 없다. 이벤트(EVENT_EXHALE/EVENT_INHALE)가 아니라 위상
+// (phase)을 보는 이유가 이것이다 — 이벤트는 한 번 놓치면 그 틱의 정보가
+// 영영 사라지지만, 위상은 매 틱 다시 실려 오므로 다음 틱에 저절로 복구된다.
+// 큐 드롭(# QDROP)이 실제로 일어날 수 있는 구조라 이 차이가 중요하다.
+//
+// 반환 0 은 "지금은 때리지 않는다" 이고, 그 이유를 gate_reason 에 남긴다.
+// ---------------------------------------------------------------------------
+static uint8_t decide_duty(const SenseUpdate *sense, bool backlog) {
+    // 명령으로 꺼져 있다.
+    if (!app_state.motor_on) { gate_reason = "off"; return 0; }
+
+    // 큐에 밀린 것이 있다 = 지금 든 sense 가 최신이 아니다.
+    // q_sense 는 32칸이라 최악의 경우 640ms 묵은 위상이고, 호흡 한 주기가
+    // 3~4초이므로 흡기·호기가 뒤집히기에 충분하다. 묵은 판단으로 때리지 않는다.
+    if (backlog) { gate_reason = "backlog"; return 0; }
+
+    // 정착 전에는 위상 판정 자체가 유효하지 않다(SETTLE_S = 12초).
+    if (!(sense->flags & FLAG_SETTLED)) { gate_reason = "settling"; return 0; }
+
+    // 스트랩이 떨어졌거나 진폭이 MIN_AMP 아래다. 위상은 잡음일 뿐이다.
+    if (!(sense->flags & FLAG_SIGNAL_OK)) { gate_reason = "nosig"; return 0; }
+
+    // 흡기 중에는 절대 때리지 않는다. 이 프로젝트의 핵심 요구사항이다.
+    if (sense->phase != BR_FALLING) { gate_reason = "inhale"; return 0; }
+
+    gate_reason = "run";
+    return app_state.duty;
+}
+
 // ---------------------------------------------------------------------------
 
 static void apply_command(const Command *cmd) {
     switch (cmd->type) {
         case CMD_BLE_CONNECTED:
-            msg_snapshot(&latest_sense, app_state.motor_on, app_state.duty);  // 앱이 현재 상태를 즉시 그린다
+            msg_snapshot(&latest_sense, app_state.motor_on, app_state.duty,
+                         motor_get(), gate_reason);  // 앱이 현재 상태를 즉시 그린다
             break;
 
         case CMD_BLE_DISCONNECTED:
@@ -46,7 +84,8 @@ static void apply_command(const Command *cmd) {
             break;
 
         case CMD_STATUS:
-            msg_snapshot(&latest_sense, app_state.motor_on, app_state.duty);
+            msg_snapshot(&latest_sense, app_state.motor_on, app_state.duty,
+                         motor_get(), gate_reason);
             break;
 
         // 배선 검증용. 창(窓) 동안 이 루프가 멈추므로 24V 를 넣기 전에만 쓴다.
@@ -87,21 +126,18 @@ static void app_task(void *) {
         drain_commands();     // 시리얼·BLE 명령을 여기서만 반영한다
         ble_tick();          // 콜백이 미뤄둔 일(재광고 등)
 
-        // TODO(1단계): 여기에 기능 판단 → 중재 → 액추에이터가 들어간다.
-        //   Intent in = {0};
-        //   if (app_state.motor_on) feat_breath(&sense, &in);   // 호기 중이면 타진을 원한다
-        //   arbitrate(&in);                            // 안전 검사 후 매 틱 재선언
-        //
-        //   주의: 큐에 밀린 것이 많을 때는 오래된 phase 로 모터를 켜게 된다.
-        //   액추에이터 판단만은 uxQueueMessagesWaiting() 이 0 일 때의 최신 sense 로 할 것.
-        //   보고는 밀린 것도 순서대로 다 내보내면 된다.
+        // 중재 → 액추에이터. 판단은 "지금 든 sense 가 최신일 때" 만 유효하므로
+        // 큐에 밀린 것이 있는지 먼저 본다. 보고(msg_report)는 밀린 것도 순서대로
+        // 다 내보내면 되지만, 모터 판단은 최신 위상으로만 해야 한다.
+        const bool backlog = uxQueueMessagesWaiting(q_sense) > 0;
 
-        // 액추에이터 출력 — 매 틱 재선언한다. 이 호출이 끊기면 모터가 저절로 멈추므로
+        // 매 틱 재선언한다. 이 호출이 끊기면 모터가 저절로 멈추므로
         // 루프 구조 자체가 워치독이 된다(act_motor.h 참조).
-        //
-        // 이 단계에서는 호흡 위상을 보지 않는다. 시리얼 명령대로만 돈다.
-        // 호기 구간 동기화와 안전 중재는 위 TODO(1단계) 자리에 들어갈 다음 작업이다.
-        motor_set(app_state.motor_on ? app_state.duty : (uint8_t)0);
+        motor_set(decide_duty(&sense, backlog));
+
+        // TODO(다음): 최대 연속 동작 타이머, 기동·정지 지연 보정.
+        //   BLDC 는 정지에 시간이 걸리므로, 정지가 느리면 호기가 끝나기 전에
+        //   미리 꺼야 흡기 구간을 침범하지 않는다. 실측값이 나오면 여기에 붙인다.
 
         msg_report(&sense);
     }

@@ -47,6 +47,9 @@ void msg_ack(CmdSource src, const Command *c);          // "OK MOTOR ON"
 void msg_ack_err(CmdSource src, const char *why);       // "ERR unknown"
 
 // 연결 직후 / CMD_STATUS 응답. 앱이 재연결했을 때 현재 상태를 즉시 그릴 수 있어야 한다.
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty);
+// duty 는 명령으로 설정된 값, out 은 호기 게이트를 통과해 지금 실제로 나가는 값.
+// gate 는 out 이 0 일 때 그 이유("inhale" / "settling" / "nosig" ...).
+void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty,
+                  uint8_t out, const char *gate);
 
 #endif  // LINK_MSG_H

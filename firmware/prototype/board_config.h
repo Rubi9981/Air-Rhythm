@@ -28,6 +28,23 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 #define MOTOR_PWM_HZ     20000   // BLC-20 규격. 가청 대역 위라 조끼에서 소음이 나지 않는다
 #define MOTOR_PWM_BITS   8       // duty 0~255
 
+// DIR(방향) — GPIO 에 연결하지 않는다. 이 펌웨어는 방향을 바꾸지 않으므로
+// 배선에서 레벨을 고정한다. 그래서 여기에 핀 번호가 없다.
+//
+//   정방향(현재 사용) : BLC-20 의 DIR 단자 → ESP32 의 VCC에 직결
+//   역방향이 필요하면 : BLC-20 의 DIR 단자 → GND 에 직결
+//
+// 아두이노 예제가 정방향에 digitalWrite(dirPin, HIGH) 를 주는 것과 같은 상태다.
+// BLC-20 에 자체 5V 출력 단자가 있으면 그쪽에 물려도 되지만, 그 5V 를 ESP32
+// 쪽으로 끌어오지는 말 것 — ESP32 는 5V 톨러런트가 아니다.
+//
+// 3.3V 로 HIGH 가 인식되는 것은 실측으로 확인했다(BLC-20 입력 문턱이 3.2V 아래).
+// 나중에 방향을 펌웨어에서 바꿔야 하면 이 단자를 빈 GPIO 로 옮기고
+// act_motor.cpp 에 digitalWrite 를 추가하면 된다.
+
+// 주의: BLDC 는 어느 듀티 아래로는 아예 돌지 않는다(약 15% = 38 부근으로 추정).
+// 그 하한을 실측하는 것이 이 단계의 목적이므로 코드에서 클램프하지 않는다.
+
 // ★ BLC-20 의 PWM 은 역논리다 — HIGH 가 정지, LOW 가 최대 속도.
 // 아두이노 예제(Timer1, TOP=400)가 정지에 OCR1A=400(상시 HIGH)을 주는 것으로 확인했다.
 // 그래서 LEDC 출력을 하드웨어 반전시킨다. 덕분에 motor_set() 쪽 의미는 그대로다
@@ -45,12 +62,6 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 #define PIN_MOTOR_PWM_LOOPBACK    15
 #define PIN_MOTOR_BRAKE_LOOPBACK  16
 #define SELFTEST_WINDOW_MS        20   // 20kHz 기준 400주기. 이 동안 app_task 가 멈춘다
-
-// DIR 은 하드웨어에서 VCC 에 고정한다 — 아두이노 예제가 정방향에 HIGH 를 준다.
-// 이 펌웨어는 방향을 바꾸지 않는다.
-//
-// 주의: BLDC 는 어느 듀티 아래로는 아예 돌지 않는다(약 15% = 38 부근으로 추정).
-// 그 하한을 실측하는 것이 이 단계의 목적이므로 코드에서 클램프하지 않는다.
 
 // --- 태스크 배치 ---
 // 센서는 core 1 독점. BLE 스택은 기본 설정상 core 0 에 붙으므로 물리적으로 격리된다.

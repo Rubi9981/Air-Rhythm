@@ -20,7 +20,7 @@ void msg_emit(MsgSink to, const char *line) {
 }
 
 void msg_emitf(MsgSink to, const char *fmt, ...) {
-    char line[96];                                // 규약상 가장 긴 줄이 약 45자
+    char line[128];                               // STATE 줄이 가장 길다(약 85자)
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(line, sizeof line, fmt, ap);
@@ -118,13 +118,20 @@ void msg_ack_err(CmdSource src, const char *why) {
     msg_emitf(sink_of(src), "ERR %s", why);
 }
 
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty) {
+void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty,
+                  uint8_t out, const char *gate) {
     if (!sense) return;
 
     // 한 줄로 현재 상태 전부. 앱이 재연결했을 때 이 줄만으로 화면을 다시 그릴 수 있어야 한다.
-    msg_emitf(SINK_BOTH, "STATE motor=%s duty=%u bpm=%.1f amp=%.1f settled=%d sig=%d",
+    //
+    // duty 와 out 을 나눠 싣는 이유: 호기 게이트가 닫혀 있으면 둘이 다르다.
+    // "명령은 들어갔는데 왜 안 도나" 를 gate 한 단어로 답하게 하려는 것이다.
+    msg_emitf(SINK_BOTH,
+              "STATE motor=%s duty=%u out=%u gate=%s bpm=%.1f amp=%.1f settled=%d sig=%d",
               motor_on ? "on" : "off",
               (unsigned)duty,
+              (unsigned)out,
+              gate ? gate : "?",
               sense->bpm,
               sense->amp,
               (sense->flags & FLAG_SETTLED)   ? 1 : 0,
