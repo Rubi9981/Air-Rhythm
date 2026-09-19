@@ -83,6 +83,7 @@ typedef enum {
     CMD_STOP,               // 정상 정지
     CMD_EMERGENCY_STOP,     // 긴급 정지 — 즉시 모터 OFF
     CMD_SET_PERIOD,         // arg = strikePeriodMs (200~2000, 동작 중 변경)
+    CMD_SET_INTENSITY,      // arg = intensity (0~255, 세기+주기 연동 조절)
     CMD_CALIBRATE,          // 캘리브레이션 모드 진입
     CMD_STATUS,             // 현재 상태를 다시 보내달라
 } CmdType;

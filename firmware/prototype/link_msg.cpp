@@ -214,14 +214,25 @@ void msg_ack_err(CmdSource src, const char *why) {
     msg_emitf(sink_of(src), "ERR %s", (why != nullptr) ? why : "unknown");
 }
 
-void msg_snapshot(const SenseUpdate *sense, bool motor_running, uint16_t period_ms) {
+void msg_cmd_log(CmdSource src, const Command *cmd) {
+    if (cmd == nullptr) return;
+    const char *src_str = (src == SRC_BLE) ? "BLE" : "SERIAL";
+    if (cmd->arg != 0) {
+        msg_emitf(SINK_SERIAL, "# CMD [%s] %s %ld", src_str, cmd_name(cmd->type), (long)cmd->arg);
+    } else {
+        msg_emitf(SINK_SERIAL, "# CMD [%s] %s", src_str, cmd_name(cmd->type));
+    }
+}
+
+void msg_snapshot(const SenseUpdate *sense, bool motor_running, uint16_t period_ms, uint8_t intensity) {
     if (sense == nullptr) return;
 
     // 기기 연결 직후 앱에 전체 상태를 브로드캐스트
     msg_emitf(SINK_BOTH,
-              "STATE running=%d period=%u bpm=%.1f amp=%.1f settled=%d sig=%d",
+              "STATE running=%d period=%u intensity=%u bpm=%.1f amp=%.1f settled=%d sig=%d",
               motor_running ? 1 : 0,
               (unsigned)period_ms,
+              (unsigned)intensity,
               sense->bpm,
               sense->amp,
               (sense->flags & FLAG_SETTLED) ? 1 : 0,

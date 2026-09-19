@@ -48,11 +48,12 @@ void msg_sense_stall();
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
                         bool motorActive, uint16_t currentPeriodMs);
 
-// --- 명령 응답 ---
+// --- 명령 응답 및 로깅 ---
 void msg_ack(CmdSource src, const Command *c);
 void msg_ack_err(CmdSource src, const char *why);
+void msg_cmd_log(CmdSource src, const Command *c);
 
 // 연결 직후 / CMD_STATUS 응답. 앱이 재연결했을 때 현재 상태를 즉시 그릴 수 있어야 한다.
-void msg_snapshot(const SenseUpdate *sense, bool motor_running, uint16_t period_ms);
+void msg_snapshot(const SenseUpdate *sense, bool motor_running, uint16_t period_ms, uint8_t intensity);
 
 #endif  // LINK_MSG_H

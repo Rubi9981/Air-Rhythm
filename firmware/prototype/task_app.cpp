@@ -31,10 +31,11 @@
 typedef struct {
     bool     motor_running;        // 모터 주기 타격 활성화 여부
     uint16_t strike_period_ms;     // 타격 주기 (200 ~ 2000 ms, 기본 500ms)
+    uint8_t  intensity;            // 세기 및 주기 연동 강도 (0 ~ 255)
     uint8_t  device_state;         // 0x00: IDLE, 0x01: RUNNING, 0x02: CALIBRATING, 0xFF: ERROR
 } AppState;
 
-static AppState    s_app_state    = { false, 500, 0x00 };
+static AppState    s_app_state    = { false, 500, 0, 0x00 };
 static SenseUpdate s_latest_sense = {};   // 재연결 스냅샷 응답용 최근 센서 상태
 
 // 텔레메트리 패킷 송신 주기 (ms) -> 50ms = 20Hz
@@ -46,15 +47,19 @@ static const unsigned long TELEMETRY_INTERVAL_MS = 50;
 static void apply_command(const Command *cmd) {
     if (cmd == nullptr) return;
 
+    // 시리얼 모니터에 어떤 경로(BLE/시리얼)로 어떤 명령이 도달했는지 디버그 로그 출력
+    msg_cmd_log(cmd->src, cmd);
+
     switch (cmd->type) {
         case CMD_BLE_CONNECTED:
             // BLE 연결 수립 시 현재 기기 상태 스냅샷을 즉시 회신
-            msg_snapshot(&s_latest_sense, s_app_state.motor_running, s_app_state.strike_period_ms);
+            msg_snapshot(&s_latest_sense, s_app_state.motor_running, s_app_state.strike_period_ms, s_app_state.intensity);
             break;
 
         case CMD_BLE_DISCONNECTED:
             // ★ [Fail-Safe] BLE 연결 끊김 발생 시 즉시 타격 정지 (안전 조치)
             s_app_state.motor_running = false;
+            s_app_state.intensity     = 0;
             s_app_state.device_state  = 0x00;  // STATE_IDLE
             // TODO(보드 수령 후): digitalWrite(PIN_MOTOR, LOW);
             break;
@@ -81,8 +86,9 @@ static void apply_command(const Command *cmd) {
             break;
 
         case CMD_EMERGENCY_STOP:
-            // ★ [긴급 정지] 즉시 모든 출력 차단
+            // ★ [긴급 정지] 즉시 모든 출력 차단 및 강도 0 초기화
             s_app_state.motor_running = false;
+            s_app_state.intensity     = 0;
             s_app_state.device_state  = 0x00;  // STATE_IDLE
             // TODO(보드 수령 후): digitalWrite(PIN_MOTOR, LOW);
             msg_ack(cmd->src, cmd);
@@ -96,6 +102,25 @@ static void apply_command(const Command *cmd) {
             msg_ack(cmd->src, cmd);
             break;
 
+        case CMD_SET_INTENSITY:
+            // ★ [세기 및 주기 동시 연동 조절] 강도(0~255)에 따라 타격 주기 자동 연동
+            // 강도가 높아질수록 주기가 짧아짐(타격 빈도 빨라짐)
+            {
+                uint8_t val = (uint8_t)(cmd->arg < 0 ? 0 : (cmd->arg > 255 ? 255 : cmd->arg));
+                s_app_state.intensity = val;
+                if (val > 0) {
+                    // intensity 1~255를 주기 1500ms ~ 200ms로 비례 매핑
+                    s_app_state.strike_period_ms = (uint16_t)(1500 - ((uint32_t)val * 1300 / 255));
+                    s_app_state.motor_running = true;
+                    s_app_state.device_state = 0x01;
+                } else {
+                    s_app_state.motor_running = false;
+                    s_app_state.device_state = 0x00;
+                }
+                msg_ack(cmd->src, cmd);
+            }
+            break;
+
         case CMD_CALIBRATE:
             // 캘리브레이션 모드 진입
             s_app_state.motor_running = false;
@@ -106,7 +131,7 @@ static void apply_command(const Command *cmd) {
 
         case CMD_STATUS:
             // 현재 상태 요청에 대한 스냅샷 전송
-            msg_snapshot(&s_latest_sense, s_app_state.motor_running, s_app_state.strike_period_ms);
+            msg_snapshot(&s_latest_sense, s_app_state.motor_running, s_app_state.strike_period_ms, s_app_state.intensity);
             break;
 
         default:

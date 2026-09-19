@@ -80,6 +80,11 @@ bool cmd_parse_packet(const uint8_t *pkt, size_t len, Command *out) {
             out->arg = (int32_t)periodMs;
             break;
 
+        case 0x06:  // CMD_SET_INTENSITY (강도 및 주기 동시 연동 조절, 0~255)
+            out->type = CMD_SET_INTENSITY;
+            out->arg = (int32_t)pkt[4]; // arg = 0~255
+            break;
+
         default:
             return false;
     }
@@ -157,6 +162,18 @@ bool cmd_parse(const char *line, Command *out) {
         return true;
     }
 
+    // "INTENSITY <0-255>" -> CMD_SET_INTENSITY (세기 및 주기 동시 연동 조절)
+    if ((rest = match_prefix_ci(p, "INTENSITY")) != nullptr ||
+        (rest = match_prefix_ci(p, "INT")) != nullptr) {
+        rest = skip_whitespace(rest);
+        if (!*rest) return false;
+        int32_t intensity = (int32_t)atoi(rest);
+        if (intensity < 0 || intensity > 255) return false;
+        out->type = CMD_SET_INTENSITY;
+        out->arg = intensity;
+        return true;
+    }
+
     // "CAL" -> CMD_CALIBRATE
     if (match_prefix_ci(p, "CAL") != nullptr) {
         out->type = CMD_CALIBRATE;
@@ -184,6 +201,7 @@ const char* cmd_name(CmdType t) {
         case CMD_STOP:              return "STOP";
         case CMD_EMERGENCY_STOP:    return "EMERGENCY_STOP";
         case CMD_SET_PERIOD:        return "SET_PERIOD";
+        case CMD_SET_INTENSITY:     return "SET_INTENSITY";
         case CMD_CALIBRATE:         return "CALIBRATE";
         case CMD_STATUS:            return "STATUS";
         case CMD_BLE_CONNECTED:     return "BLE_CONNECTED";

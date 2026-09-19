@@ -86,13 +86,18 @@ class RxWriteCallbacks : public NimBLECharacteristicCallbacks {
         const uint8_t *pkt = (const uint8_t *)rxData.data();
         size_t len = rxData.length();
 
-        // 8바이트 바이너리 패킷 파싱 후 큐에 전달
+        // 8바이트 바이너리 패킷 파싱 후 큐에 전달 (실패 시 텍스트 명령 파싱 시도)
         Command cmd = {};
         if (cmd_parse_packet(pkt, len, &cmd)) {
             cmd.src = SRC_BLE;
             cmd_submit(&cmd);
+        } else if (len > 0) {
+            // BLE 터미널/nRF Connect 등에서 텍스트 명령(예: "ESTOP", "START 500") 전송 시 호환 지원
+            if (cmd_parse(rxData.c_str(), &cmd)) {
+                cmd.src = SRC_BLE;
+                cmd_submit(&cmd);
+            }
         }
-        // *주의*: 파싱 실패 시 응답(ACK/ERR) 및 하드웨어 제어는 여기서 하지 않고 app_task가 전담.
     }
 };
 
