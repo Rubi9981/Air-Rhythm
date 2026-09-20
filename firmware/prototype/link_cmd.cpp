@@ -60,12 +60,9 @@ bool cmd_parse_packet(const uint8_t *pkt, size_t len, Command *out) {
             out->arg = (periodMs >= 200 && periodMs <= 2000) ? (int32_t)periodMs : 500;
             break;
 
-        case 0x02:  // CMD_STOP (정상 정지)
+        case 0x02:  // CMD_STOP (정지)
+        case 0x03:  // 하위 호환 정지 처리
             out->type = CMD_STOP;
-            break;
-
-        case 0x03:  // CMD_EMERGENCY_STOP (긴급 정지)
-            out->type = CMD_EMERGENCY_STOP;
             break;
 
         case 0x04:  // CMD_CALIBRATE (캘리브레이션 진입)
@@ -132,15 +129,8 @@ bool cmd_parse(const char *line, Command *out) {
         return true;
     }
 
-    // "ESTOP" -> CMD_EMERGENCY_STOP (STOP보다 먼저 확인)
-    if (match_prefix_ci(p, "ESTOP") != nullptr) {
-        out->type = CMD_EMERGENCY_STOP;
-        out->arg = 0;
-        return true;
-    }
-
-    // "STOP" -> CMD_STOP
-    if (match_prefix_ci(p, "STOP") != nullptr) {
+    // "ESTOP" 또는 "STOP" -> CMD_STOP
+    if (match_prefix_ci(p, "ESTOP") != nullptr || match_prefix_ci(p, "STOP") != nullptr) {
         out->type = CMD_STOP;
         out->arg = 0;
         return true;
@@ -182,7 +172,6 @@ const char* cmd_name(CmdType t) {
     switch (t) {
         case CMD_START:             return "START";
         case CMD_STOP:              return "STOP";
-        case CMD_EMERGENCY_STOP:    return "EMERGENCY_STOP";
         case CMD_SET_PERIOD:        return "SET_PERIOD";
         case CMD_CALIBRATE:         return "CALIBRATE";
         case CMD_STATUS:            return "STATUS";

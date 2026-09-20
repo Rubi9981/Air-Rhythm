@@ -80,14 +80,6 @@ static void apply_command(const Command *cmd) {
             msg_ack(cmd->src, cmd);
             break;
 
-        case CMD_EMERGENCY_STOP:
-            // ★ [긴급 정지] 즉시 모든 출력 차단
-            s_app_state.motor_running = false;
-            s_app_state.device_state  = 0x00;  // STATE_IDLE
-            // TODO(보드 수령 후): digitalWrite(PIN_MOTOR, LOW);
-            msg_ack(cmd->src, cmd);
-            break;
-
         case CMD_SET_PERIOD:
             // 동작 중 타격 주기 실시간 변경
             if (cmd->arg >= 200 && cmd->arg <= 2000) {

@@ -80,10 +80,10 @@ void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
     // [2] 기기 상태
     pkt[2] = deviceState;
 
-    // [3-4] 흉부 센서 압력값 (밀리볼트 mV -> signed 16-bit LE)
-    int16_t pressure_mv = sense->mv;
-    pkt[3] = (uint8_t)(pressure_mv & 0xFF);
-    pkt[4] = (uint8_t)((pressure_mv >> 8) & 0xFF);
+    // [3-4] 흉부 센서 압력값 (필터링 후 호흡 파형 -> signed 16-bit LE)
+    int16_t pressure_filt = sense->filt;
+    pkt[3] = (uint8_t)(pressure_filt & 0xFF);
+    pkt[4] = (uint8_t)((pressure_filt >> 8) & 0xFF);
 
     // [5] 호흡 위상 매핑
     //   BR_RISING(+1)  -> 0x01 (INHALE: 들숨)
