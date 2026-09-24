@@ -7,7 +7,8 @@
  *   - 센서 태스크(Core 1)로부터 큐(q_sense)를 통해 전달된 SenseUpdate 소비 (50Hz)
  *   - 시리얼·버튼 명령 큐(q_cmd)를 화면 상태 머신(app_logic)에 반영
  *   - 상태 머신이 정한 duty 를 매 틱 motor_set() (레벨 트리거)
- *   - 화면이 바뀌면 LCD 두 줄을 알림 (지금은 시리얼 SCREEN 줄, 5단계에서 LCD)
+ *   - 화면이 바뀌면 LCD 두 줄을 알림 (지금은 시리얼에 LCD 모양으로, 5단계에서 실제 LCD)
+ *   - 호흡 모드가 요청하면 검출기 초기화를 센서 태스크에 전달 (sense_request_reset)
  *   - 20Hz 주기로 BLE 텔레메트리 패킷 송신 (msg_send_telemetry)
  *   - 시리얼 디버그 리포트 방출 (msg_report)
  *
@@ -61,7 +62,7 @@ static uint8_t device_state() {
 
 static void send_snapshot() {
     const char *gate = "?";
-    logic_output(&s_model, &gate);
+    logic_output(&s_model, &s_latest_sense, false, &gate);
     const StatusView v = {
         screen_name(s_model.screen),
         level_name(s_model.level),
@@ -121,10 +122,15 @@ static void apply_command(const Command *cmd, uint32_t now_ms) {
             send_snapshot();
             break;
 
-        // 검출기를 처음부터 다시 정착시킨다. 3단계에서 호흡 모드 진입 흐름이 같은 요청을 쓴다.
+        // 검출기를 처음부터 다시 정착시킨다(디버그용). 호흡 모드 흐름 안에서는 그 흐름이
+        // 검출기 회차를 관리하므로 끼어들지 않는다 — 초기화는 RETRY 로 한다.
         case CMD_BREATH_RESET:
-            sense_request_reset();
-            msg_ack(cmd->src, cmd);
+            if (logic_in_breath_flow(&s_model)) {
+                msg_ack_err(cmd->src, "busy");
+            } else {
+                sense_request_reset();
+                msg_ack(cmd->src, cmd);
+            }
             break;
 
         // 배선 검증용. 창(窓) 동안 이 루프가 멈추므로 모터가 서 있을 때만, 24V 를 넣기 전에만 쓴다.
@@ -178,7 +184,8 @@ static void app_task(void *) {
         }
         s_latest_sense = sense;
 
-        // 2. 고장 검사를 명령보다 먼저 한다 — 같은 틱에 들어온 시작 버튼이 고장을 앞지르지 않게.
+        // 2. 고장 검사와 호흡 모드 전환을 명령보다 먼저 한다 — 같은 틱에 들어온 시작 버튼이
+        //    고장을 앞지르지 않게. 밀린 샘플도 하나씩 전부 여기를 지나므로 이벤트를 놓치지 않는다.
         const bool backlog = uxQueueMessagesWaiting(q_sense) > 0;
         logic_tick(&s_model, &sense, backlog, now);
 
@@ -187,9 +194,14 @@ static void app_task(void *) {
         drain_commands(now);
         ble_tick();                // 콜백이 미뤄둔 일(재광고 등)
 
+        // 호흡 모드가 시작(또는 RETRY)되었으면 검출기 초기화를 요청한다. 센서 태스크가
+        // 다음 틱에 core 1 에서 초기화하고, 그 뒤 샘플에는 이 회차 번호가 붙어 온다.
+        if (logic_reset_wanted(&s_model)) logic_reset_issued(&s_model, sense_request_reset());
+
         // 4. 액추에이터. 매 틱 재선언한다 — 이 호출이 끊기면 모터가 저절로 멈추므로
         //    루프 구조 자체가 워치독이 된다(act_motor.h 참조).
-        motor_set(logic_output(&s_model, nullptr));
+        //    호흡 실행 중에는 지금 든 샘플이 최신일 때(backlog 없음)만 위상을 믿는다.
+        motor_set(logic_output(&s_model, &sense, backlog, nullptr));
 
         publish_screen();
 
