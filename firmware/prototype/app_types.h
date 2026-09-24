@@ -42,6 +42,7 @@
 typedef struct {
     uint32_t n;            // [샘플] slope_update 후의 detector.n (지금까지 처리한 샘플 수)
     int16_t  raw, mv;      // [샘플] 이번 샘플의 원시값 (CSV 출력용)
+    int16_t  filt;         // [샘플] 대역통과 필터링 후 호흡 파형 (그래프 출력용)
 
     int8_t   phase;        // [상태] BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
     uint8_t  flags;        // [상태] FLAG_SETTLED | FLAG_SIGNAL_OK
@@ -78,10 +79,11 @@ typedef struct {
 typedef enum {
     CMD_NONE = 0,
     CMD_BLE_CONNECTED,      // 콜백이 알린다 → app_task 가 스냅샷을 보낸다
-    CMD_BLE_DISCONNECTED,   // 1단계에서 여기에 모터 정지가 붙는다
-    CMD_MOTOR_ON,
-    CMD_MOTOR_OFF,
-    CMD_SET_DUTY,           // arg = 0~255
+    CMD_BLE_DISCONNECTED,   // Fail-Safe: 모터 정지 + STATE_IDLE
+    CMD_START,              // 타격 허용. 실제 출력은 duty 와 호기 게이트가 정한다. arg 없음
+    CMD_STOP,               // 정상 정지 (긴급 정지 배제, 시작/정지만 운용)
+    CMD_SET_DUTY,           // arg = 0~255. 동작 중에도 바꿀 수 있다
+    CMD_CALIBRATE,          // 캘리브레이션 모드 진입. 모터는 멈춘다
     CMD_STATUS,             // 현재 상태를 다시 보내달라
     CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용)
 } CmdType;

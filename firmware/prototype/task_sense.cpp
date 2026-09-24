@@ -61,10 +61,11 @@ void sense_reset() {
 
 // 한 샘플치 처리. 이벤트·진단 플래그는 큐로 나갈 때까지 pending 에 누적된다.
 void sense_step(int16_t raw, int16_t mv, SenseUpdate *pending) {
-    pending->raw = raw;
-    pending->mv  = mv;
+    pending->raw  = raw;
+    pending->mv   = mv;
 
     const bfloat y = bandpass_update(&bandpass, (bfloat)mv);
+    pending->filt = (int16_t)round(y);
 
     BreathEvent ev;
     if (slope_update(&detector, y, &ev)) {
