@@ -13,6 +13,7 @@
 //
 // [텍스트] 시리얼 명령 (한 줄 = 한 명령, 대소문자 무시):
 //   START | MOTOR ON | STOP | ESTOP | MOTOR OFF | DUTY <0-255> | CAL | STATUS | SELFTEST
+//   BREATH RESET (호흡 검출기 재정착)
 //   SELFTEST 는 시리얼 전용이다(실행 중 app_task 가 멈추므로 앱에서 부를 수 없게 한다).
 
 #ifndef LINK_CMD_H

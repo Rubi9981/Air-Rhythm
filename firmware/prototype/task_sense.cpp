@@ -13,6 +13,10 @@
 static BandpassButter2 bandpass;
 static SlopeDetector   detector;
 
+// 초기화 요청 회차 — app_task 가 쓰고 sense_task 가 읽는다. 작성자가 하나뿐이고
+// 정렬된 16비트 읽기·쓰기는 원자적이므로 잠금 없이 안전하다.
+static volatile uint16_t s_reset_req = 0;
+
 static int read_averaged_mv(int pin, int n = ADC_AVG_COUNT) {
     uint32_t sum = 0;
     for (int i = 0; i < n; i++) sum += analogReadMilliVolts(pin);
@@ -88,8 +92,21 @@ static void sense_task(void *) {
     // setup() 에서 잡으면 태스크 생성까지의 간격만큼 첫 주기가 밀린다.
     TickType_t next = xTaskGetTickCount();
     SenseUpdate pending = {};
+    uint16_t epoch = 0;          // sense_start() 가 이미 한 번 초기화했다 = 0회차
 
     for (;;) {
+        // 초기화 요청은 틱 경계에서만 반영한다. sense_step() 도중에 상태가 바뀌는 일이 없다.
+        const uint16_t req = s_reset_req;
+        if (req != epoch) {
+            epoch = req;
+            sense_reset();
+            // 아직 못 보낸 이벤트는 이전 회차의 것이라 버린다. 드롭 수는 큐 진단이므로 남긴다.
+            const uint16_t drops = pending.drops;
+            pending = {};
+            pending.drops = drops;
+        }
+        pending.epoch = epoch;
+
         measure_sample_period(&pending);
 
         const int16_t raw = (int16_t)analogRead(SENSOR_PIN);
@@ -108,6 +125,12 @@ static void sense_task(void *) {
 
         vTaskDelayUntil(&next, pdMS_TO_TICKS(PERIOD_MS));
     }
+}
+
+uint16_t sense_request_reset() {
+    const uint16_t next = (uint16_t)(s_reset_req + 1);
+    s_reset_req = next;
+    return next;
 }
 
 void sense_start() {

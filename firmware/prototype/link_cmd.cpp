@@ -134,6 +134,13 @@ bool cmd_parse(const char *line, Command *out) {
         return false;
     }
 
+    // "BREATH RESET" — 검출기 재정착(디버그용. 이후 호흡 모드 진입 흐름이 같은 명령을 쓴다)
+    if ((rest = match_ci(p, "BREATH")) != nullptr) {
+        rest = skip_space(rest);
+        if (is_word(rest, "RESET")) return set_cmd(out, CMD_BREATH_RESET, 0);
+        return false;
+    }
+
     // "DUTY 200" — 값 검증까지 여기서 끝낸다. 경계에서 거르므로 app_task 는
     // "이미 유효한 명령"만 다루면 되고, 잘못된 값이 시스템 안으로 들어오는 길이 없다.
     if ((rest = match_ci(p, "DUTY")) != nullptr) {
@@ -168,6 +175,7 @@ const char *cmd_name(CmdType t) {
         case CMD_CALIBRATE:         return "CALIBRATE";
         case CMD_STATUS:            return "STATUS";
         case CMD_SELFTEST:          return "SELFTEST";
+        case CMD_BREATH_RESET:      return "BREATH RESET";
         case CMD_BLE_CONNECTED:     return "BLE_CONNECTED";
         case CMD_BLE_DISCONNECTED:  return "BLE_DISCONNECTED";
         default:                    return "?";

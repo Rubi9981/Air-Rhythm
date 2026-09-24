@@ -24,6 +24,10 @@
 // 센서 태스크 멈춤(Stall) 상태 추적용 플래그
 static bool s_sense_stalled = false;
 
+// 정착 완료는 회차마다 한 번씩 알린다. 검출기를 초기화하면 다시 알릴 수 있게 된다.
+static uint16_t s_epoch             = 0;
+static bool     s_announced_settled = false;
+
 // ============================================================================
 // [1. 기본 메시지 방출 (Emit) 헬퍼]
 // ============================================================================
@@ -155,6 +159,13 @@ void msg_report(const SenseUpdate *sense) {
         msg_emit(SINK_BOTH, "# FAULT sense_ok");
     }
 
+    // 검출기 초기화 후 첫 샘플. 이 줄 이후의 이벤트는 새 회차의 것이다.
+    if (sense->epoch != s_epoch) {
+        s_epoch = sense->epoch;
+        s_announced_settled = false;
+        msg_emitf(SINK_BOTH, "# RESET epoch=%u", (unsigned)s_epoch);
+    }
+
     // 큐 드롭(과부하) 감지
     if (sense->drops > 0) {
         msg_emitf(SINK_BOTH, "# QDROP n=%lu ticks=%u", (unsigned long)sense->n, sense->drops);
@@ -180,8 +191,7 @@ void msg_report(const SenseUpdate *sense) {
     if (sense->events & EVENT_SIGNAL_LOST) report_signal(sense, "NOSIG");
     if (sense->events & EVENT_SIGNAL_OK)   report_signal(sense, "SIGOK");
 
-    // 최초 필터 정착(Settle) 완료 알림 (1회만 발생)
-    static bool s_announced_settled = false;
+    // 필터 정착(Settle) 완료 알림 (회차마다 1회)
     if (!s_announced_settled && (sense->flags & FLAG_SETTLED)) {
         s_announced_settled = true;
         msg_emit(SINK_BOTH, "# SETTLED");

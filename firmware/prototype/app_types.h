@@ -49,6 +49,8 @@ typedef struct {
     uint8_t  events;       // [사건] EVENT_* 비트. 0 이면 이벤트 없음
     uint8_t  rate_ready;   // [진단] 1 이면 아래 rate_* 가 유효 (약 1초에 한 번)
     uint16_t drops;        // [진단] 큐가 차서 버린 틱 수. 정상 동작에서는 항상 0
+    uint16_t epoch;        // [상태] 검출기 초기화 회차. 부팅 시 0, sense_request_reset() 이 처리될 때마다 +1.
+                           //        앱은 요청한 회차와 다른 샘플(초기화 전에 큐에 들어간 것)을 믿지 않는다
 
     // [사건] 아래 셋은 events != 0 일 때만 의미가 있다. events 가 유효성 플래그
     // 역할을 하므로, 이벤트가 없는 틱에 옛 값이 남아 있어도 무해하다.
@@ -86,6 +88,7 @@ typedef enum {
     CMD_CALIBRATE,          // 캘리브레이션 모드 진입. 모터는 멈춘다
     CMD_STATUS,             // 현재 상태를 다시 보내달라
     CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용)
+    CMD_BREATH_RESET,       // 호흡 검출기를 처음부터 다시 정착시킨다(필터·위상·진폭·호흡률)
 } CmdType;
 
 typedef enum {

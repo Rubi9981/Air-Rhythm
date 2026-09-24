@@ -27,6 +27,7 @@
 #include "link_ble.h"
 #include "link_cmd.h"
 #include "link_msg.h"
+#include "task_sense.h"
 
 // 텔레메트리 [2] 기기 상태 코드
 enum : uint8_t {
@@ -52,6 +53,10 @@ static SenseUpdate s_latest_sense = {};   // 재연결 스냅샷 응답용 최�
 // 마지막 게이트 판단의 이유. STATE 줄에 실어 "왜 안 도는지" 를 바로 보이게 한다.
 static const char *s_gate_reason = "off";
 
+// 마지막으로 요청한 검출기 초기화 회차. 이 값과 epoch 가 다른 샘플은
+// 초기화 전에 큐에 들어간 것이라, 그 위상으로는 때리지 않는다.
+static uint16_t s_sense_epoch = 0;
+
 // 텔레메트리 패킷 송신 주기 (ms) -> 50ms = 20Hz
 static const unsigned long TELEMETRY_INTERVAL_MS = 50;
 
@@ -74,6 +79,9 @@ static uint8_t decide_duty(const SenseUpdate *sense, bool backlog) {
     // q_sense 는 32칸이라 최악의 경우 640ms 묵은 위상이고, 호흡 한 주기가
     // 3~4초이므로 흡기·호기가 뒤집히기에 충분하다. 묵은 판단으로 때리지 않는다.
     if (backlog) { s_gate_reason = "backlog"; return 0; }
+
+    // 초기화를 요청했는데 아직 이전 회차의 샘플이다. 플래그가 "정착됨" 이어도 옛 검출기의 것이다.
+    if (sense->epoch != s_sense_epoch) { s_gate_reason = "reset"; return 0; }
 
     // 정착 전에는 위상 판정 자체가 유효하지 않다(SETTLE_S = 12초).
     if (!(sense->flags & FLAG_SETTLED)) { s_gate_reason = "settling"; return 0; }
@@ -140,6 +148,13 @@ static void apply_command(const Command *cmd) {
 
         case CMD_STATUS:
             send_snapshot();
+            break;
+
+        // 검출기를 처음부터 다시 정착시킨다. 새 회차의 샘플이 올 때까지 게이트는 "reset",
+        // 그 뒤 SETTLE_S 동안 "settling" 으로 닫혀 있으므로 모터는 저절로 멈춘다.
+        case CMD_BREATH_RESET:
+            s_sense_epoch = sense_request_reset();
+            msg_ack(cmd->src, cmd);
             break;
 
         // 배선 검증용. 창(窓) 동안 이 루프가 멈추므로 24V 를 넣기 전에만 쓴다.

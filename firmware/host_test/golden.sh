@@ -11,6 +11,10 @@
 #   sh firmware/host_test/golden.sh            비교
 #   sh firmware/host_test/golden.sh --update   골든 갱신 (의도한 변경일 때만)
 #
+# 초기화 검사도 함께 한다: 한 번 끝까지 재생한 뒤 sense_reset() 하고 다시 재생하면
+# 두 번째 결과('# RESET epoch=1' 이후)가 골든과 같아야 한다. 다르면 초기화가 필터·검출기
+# 상태 일부를 남긴 것이다(호흡 모드 재시작·RETRY 가 이 성질에 기대고 있다).
+#
 # REPORT_SAMPLE 설정과 무관하게 동작한다.
 set -e
 H=firmware/host_test
@@ -37,6 +41,12 @@ for f in data/*.csv; do
         printf "  일치   %-28s %s줄\n" "$name" "$(wc -l < "$O/cur.txt" | tr -d ' ')"
     else
         printf "  불일치 %s\n" "$name"; diff "$G/$name.txt" "$O/cur.txt" | head -6; fail=1
+    fi
+    if [ $update -eq 0 ] && [ -f "$G/$name.txt" ]; then
+        "$O/new" "$f" twice | grep '^#' | sed -n '/^# RESET epoch=1$/,$p' | tail -n +2 > "$O/re.txt" || true
+        if ! diff -q "$G/$name.txt" "$O/re.txt" >/dev/null; then
+            printf "  초기화 후 불일치 %s\n" "$name"; diff "$G/$name.txt" "$O/re.txt" | head -6; fail=1
+        fi
     fi
 done
 rm -rf "$O"
