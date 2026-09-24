@@ -434,6 +434,23 @@ static void test_bad_state_fault() {
     m.screen = SCR_FAULT;                        // 원인 없는 FAULT 화면도 오염이다
     logic_tick(&m, nullptr, false, t);
     CHECK(m.fault == FAULT_BAD_STATE);
+    // 커서는 화면마다 범위가 다르다 — 두 항목 화면의 2, 항목 없는 화면의 1 도 오염이다
+    struct { Screen screen; uint8_t cursor; bool bad; } cases[] = {
+        { SCR_MODE_SELECT,  1, false }, { SCR_MODE_SELECT,  2, true },
+        { SCR_NORMAL_SETUP, 2, false }, { SCR_NORMAL_SETUP, 3, true },
+        { SCR_BREATH_SETUP, 2, false }, { SCR_BREATH_SETUP, 3, true },
+        { SCR_NO_SIGNAL,    1, false }, { SCR_NO_SIGNAL,    2, true },
+        { SCR_SIGNAL_LOST,  1, false }, { SCR_SIGNAL_LOST,  2, true },
+        { SCR_NORMAL_RUN,   0, false }, { SCR_NORMAL_RUN,   1, true },
+        { SCR_BREATH_RUN,   1, true  }, { SCR_BREATH_INIT,  1, true },
+    };
+    for (auto &c : cases) {
+        logic_init(&m, t);
+        m.screen = c.screen;
+        m.cursor = c.cursor;
+        logic_tick(&m, nullptr, false, t);
+        CHECK((m.fault == FAULT_BAD_STATE) == c.bad);
+    }
 }
 
 static void test_service() {

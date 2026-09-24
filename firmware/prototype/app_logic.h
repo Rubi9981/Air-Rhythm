@@ -72,6 +72,8 @@ typedef enum {
     FAULT_BAD_STATE,        // 화면·강도 값이 범위 밖 — 메모리 오염이나 코드 버그
 } Fault;
 
+// 모드 선택 화면의 커서 위치
+enum { MODE_NORMAL = 0, MODE_BREATH, MODE_ITEMS };
 // 설정 화면의 커서 위치
 enum { SETUP_POWER = 0, SETUP_START, SETUP_BACK, SETUP_ITEMS };
 // NO_SIGNAL / SIGNAL_LOST 화면의 커서 위치

@@ -112,7 +112,7 @@ static bool on_mode_select(AppModel *m, Button b, uint32_t now_ms) {
     if (b == BTN_OK) {
         // 설정 화면에 들어갈 때마다 강도는 LOW 부터다 (목표 3.1.2 / 4.1.3).
         m->level = LEVEL_LOW;
-        go(m, m->cursor == 0 ? SCR_NORMAL_SETUP : SCR_BREATH_SETUP, now_ms);
+        go(m, m->cursor == MODE_NORMAL ? SCR_NORMAL_SETUP : SCR_BREATH_SETUP, now_ms);
         return true;
     }
     m->cursor ^= 1;                     // 두 항목뿐이라 네 방향 모두 토글
@@ -271,12 +271,25 @@ static void breath_tick(AppModel *m, const SenseUpdate *s, uint32_t now_ms) {
     }
 }
 
+// 화면마다 커서가 가질 수 있는 항목 수. 선택 항목이 없는 화면은 커서가 늘 0 이다.
+static uint8_t cursor_items(Screen s) {
+    switch (s) {
+        case SCR_MODE_SELECT:  return MODE_ITEMS;
+        case SCR_NORMAL_SETUP:
+        case SCR_BREATH_SETUP: return SETUP_ITEMS;
+        case SCR_NO_SIGNAL:
+        case SCR_SIGNAL_LOST:  return CHOICE_ITEMS;
+        default:               return 1;
+    }
+}
+
 void logic_tick(AppModel *m, const SenseUpdate *sense, bool backlog, uint32_t now_ms) {
     if (m->fault != FAULT_NONE) return;
 
     // 상태값 검사 — 여기가 틀리면 어떤 판단도 믿을 수 없다 (목표 8.6).
+    // 커서는 화면마다 범위가 다르다. 두 항목 화면의 커서 2 도 오염으로 본다.
     if ((unsigned)m->screen >= SCR_COUNT || m->screen == SCR_FAULT ||
-        (unsigned)m->level >= LEVEL_COUNT || m->cursor >= SETUP_ITEMS) {
+        (unsigned)m->level >= LEVEL_COUNT || m->cursor >= cursor_items(m->screen)) {
         logic_fault(m, FAULT_BAD_STATE, now_ms);
         return;
     }
@@ -372,8 +385,8 @@ static char mark(const AppModel *m, uint8_t item) { return m->cursor == item ? '
 void logic_render(const AppModel *m, ScreenLines out) {
     switch (m->screen) {
         case SCR_MODE_SELECT:
-            put_line(out[0], "SELECT MODE  %u/2", (unsigned)m->cursor + 1);
-            put_line(out[1], "> %s", m->cursor == 0 ? "NORMAL" : "BREATH");
+            put_line(out[0], "SELECT MODE  %u/%u", (unsigned)m->cursor + 1, (unsigned)MODE_ITEMS);
+            put_line(out[1], "> %s", m->cursor == MODE_NORMAL ? "NORMAL" : "BREATH");
             break;
 
         case SCR_NORMAL_SETUP:
