@@ -1,20 +1,19 @@
-// 명령 파서 — 시리얼(텍스트)과 BLE(바이너리)가 공유한다.
+// 명령 파서 — 시리얼 텍스트.
 //
 // 이 계층은 "무엇을 하라는 말인지"만 해석한다. 상태를 바꾸거나 하드웨어를
 // 건드리지 않는다. 그 일은 app_task 가 q_cmd 에서 꺼내 처리한다.
 //
-// 공유하는 이유: BLE 를 붙이기 전에 시리얼로 모든 명령을 테스트할 수 있다.
-// BLE 디버깅과 로직 디버깅이 섞이지 않는 것이 개발 속도를 가장 크게 좌우한다.
-//
-// [바이너리] 앱 → ESP32 8바이트 패킷:
-//   [0] 0xAA [1] 0x55 [2] cmdId [3] mode [4] duty [5] 0x00 [6] rsvd [7] checksum
-//   cmdId: 0x01 START, 0x02/0x03 STOP, 0x04 CALIBRATE, 0x06 SET_DUTY(0~255)
-//   0x05(구 SET_PERIOD)는 폐기 — 받으면 거부한다.
+// 모터를 켜는 경로는 기기 버튼(화면 흐름) 하나뿐이다. 시리얼의 BTN 은 물리 버튼과
+// 같은 CMD_BUTTON 으로 들어가므로 흐름을 건너뛰지 않는다. BLE 는 모니터링 전용이라
+// 앱에서 오는 명령은 받지 않는다.
 //
 // [텍스트] 시리얼 명령 (한 줄 = 한 명령, 대소문자 무시):
-//   START | MOTOR ON | STOP | ESTOP | MOTOR OFF | DUTY <0-255> | CAL | STATUS | SELFTEST
-//   BREATH RESET (호흡 검출기 재정착)
-//   SELFTEST 는 시리얼 전용이다(실행 중 app_task 가 멈추므로 앱에서 부를 수 없게 한다).
+//   BTN U|D|L|R|OK (UP/DOWN/LEFT/RIGHT 도 가능)  — 버튼 흉내
+//   STOP | ESTOP                                   — 어느 화면에서든 정지
+//   STATUS                                         — 상태 한 줄
+//   SELFTEST                                       — 배선 검증. 정지 중에만
+//   BREATH RESET                                   — 호흡 검출기 재정착
+//   DUTY <0-255>                                   — 서비스 모드(SERVICE_MODE=1) 빌드 전용 직접 구동
 
 #ifndef LINK_CMD_H
 #define LINK_CMD_H
@@ -23,11 +22,6 @@
 #include <stddef.h>
 
 #include "app_types.h"
-
-// 8바이트 바이너리 패킷을 Command 로 해석한다 (BLE Write 콜백용).
-// 헤더(0xAA,0x55), 체크섬 검증 포함. 실패 시 false.
-// out->src 는 호출자가 채운다.
-bool cmd_parse_packet(const uint8_t *pkt, size_t len, Command *out);
 
 // 한 줄 텍스트를 Command 로 해석한다 (시리얼 디버그용). 부수효과 없는 순수 함수 —
 // 호스트에서 단위 테스트할 수 있도록 이 성질을 유지할 것.
@@ -44,5 +38,6 @@ void cmd_poll_serial();
 
 // ACK 문자열용. 사람이 읽는 이름.
 const char *cmd_name(CmdType t);
+const char *button_name(Button b);
 
 #endif  // LINK_CMD_H

@@ -112,3 +112,4 @@ void ble_send_telemetry(const uint8_t *, size_t) {}
 #endif
 
 const char *cmd_name(CmdType) { return "?"; }
+const char *button_name(Button) { return "?"; }

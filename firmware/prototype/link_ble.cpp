@@ -5,8 +5,9 @@
  *
  * 역할:
  *   - NimBLE GATT Server 운영 (Advertising, Service, Characteristic)
- *   - 앱으로부터 8바이트 제어 명령 수신 (Write) -> Command 큐(q_cmd)로 전달
  *   - 12바이트 텔레메트리 패킷(Notify) 및 진단 텍스트 전송
+ *   - 모니터링 전용: 앱에서 오는 Write 는 받기만 하고 무시한다. 모터를 켜는 경로는
+ *     기기 버튼 하나뿐이어야 화면과 실제 동작이 어긋나지 않는다.
  *
  * 필요 라이브러리:
  *   NimBLE-Arduino (h2zero) 2.x — 검증에 쓴 버전은 2.5.1.
@@ -19,7 +20,7 @@
  *
  * 주요 규칙:
  *   - BLE 콜백 함수 내에서는 절대 모터나 센서 하드웨어 상태를 직접 제어하지 않음.
- *   - 모든 수신 데이터는 cmd_parse_packet() 거쳐 cmd_submit()을 통해 app_task로 전달됨.
+ *   - 연결 끊김은 모터와 무관하다 — 휴대폰이 멀어졌다고 버튼으로 시작한 타진이 멈추면 안 된다.
  *   - 센서 루프(Core 1) 방해를 막기 위해 본딩(Bonding)은 비활성화 상태 유지.
  * ============================================================================
  */
@@ -69,30 +70,6 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         (void)reason;
         s_ble_connected = false;
         s_want_advertise = true; // 재광고는 콜백이 아닌 ble_tick()에서 안전하게 수행
-
-        // 연결 끊김 이벤트 명령을 app_task로 전송 (Fail-Safe 긴급 정지 트리거)
-        Command cmd = { CMD_BLE_DISCONNECTED, SRC_BLE, 0 };
-        cmd_submit(&cmd);
-    }
-};
-
-// ============================================================================
-// [GATT Characteristic 콜백 클래스] - 앱 Write 명령 수신 처리
-// ============================================================================
-class RxWriteCallbacks : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) override {
-        (void)connInfo;
-        std::string rxData = pCharacteristic->getValue();
-        const uint8_t *pkt = (const uint8_t *)rxData.data();
-        size_t len = rxData.length();
-
-        // 8바이트 바이너리 패킷 파싱 후 큐에 전달
-        Command cmd = {};
-        if (cmd_parse_packet(pkt, len, &cmd)) {
-            cmd.src = SRC_BLE;
-            cmd_submit(&cmd);
-        }
-        // *주의*: 파싱 실패 시 응답(ACK/ERR) 및 하드웨어 제어는 여기서 하지 않고 app_task가 전담.
     }
 };
 
@@ -122,12 +99,13 @@ void ble_init() {
         NIMBLE_PROPERTY::NOTIFY
     );
 
-    // 5. RX Characteristic (Write / WriteNR, App -> ESP32) 생성 및 콜백 등록
-    NimBLECharacteristic *pRxChar = pService->createCharacteristic(
+    // 5. RX Characteristic (Write / WriteNR, App -> ESP32)
+    //    모니터링 전용이라 콜백을 달지 않는다 — 써도 받기만 하고 버린다. 특성 자체는 남겨
+    //    두어 기존 앱이 연결·쓰기에서 오류를 내지 않게 한다.
+    pService->createCharacteristic(
         RX_UUID,
         NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR
     );
-    pRxChar->setCallbacks(new RxWriteCallbacks());
 
     // 6. Service 시작
     pService->start();  // 이 줄은 동작 안함

@@ -44,7 +44,7 @@ void msg_emit(MsgSink to, const char *line) {
 }
 
 void msg_emitf(MsgSink to, const char *fmt, ...) {
-    char line[128];                               // STATE 줄이 가장 길다(약 85자)
+    char line[160];                               // STATE 줄이 가장 길다(약 130자)
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(line, sizeof(line), fmt, ap);
@@ -60,18 +60,18 @@ void msg_emitf(MsgSink to, const char *fmt, ...) {
  * 패킷 구조 (12 Bytes):
  *   [0] 0x55 (Header 1)
  *   [1] 0xAA (Header 2)
- *   [2] Device State (0x00: IDLE, 0x01: RUNNING, 0x02: CALIBRATING, 0xFF: ERROR)
+ *   [2] Device State (0x00: IDLE, 0x01: RUNNING, 0xFF: ERROR(FAULT)). 0x02 는 예약(구 CALIBRATING)
  *   [3] Chest Pressure Low Byte (int16 Little Endian, mV 단위)
  *   [4] Chest Pressure High Byte
  *   [5] Respiration Phase (0x00: NONE, 0x01: INHALE, 0x02: EXHALE)
- *   [6] Motor On (0x00: OFF, 0x01: ON) — 명령 상태. 실제로 도는지는 [9] 를 볼 것
+ *   [6] Motor On (0x00: OFF, 0x01: ON) — 실행 화면인가. 실제로 도는지는 [9] 를 볼 것
  *   [7] Power Status (0x64 = 100%, 유선 상시 전원)
- *   [8] Duty (0~255) — 명령으로 설정된 값
- *   [9] Out  (0~255) — 호기 게이트를 거쳐 지금 실제로 나가는 값
+ *   [8] Duty (0~255) — 선택한 강도가 뜻하는 값
+ *   [9] Out  (0~255) — 지금 실제로 나가는 값
  *   [10] Error Code (0x00: Normal)
  *   [11] Checksum (XOR of Bytes 2..10)
  *
- * [6]=1 인데 [9]=0 이면 "켜져 있지만 흡기 중(또는 정착 전·무신호)이라 대기" 다.
+ * [6]=1 인데 [9]=0 이면 "실행 중이지만 흡기 중(또는 정착 전·무신호)이라 대기" 다.
  * 이유까지 필요하면 STATE 텍스트 줄의 gate= 를 본다.
  */
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
@@ -219,10 +219,16 @@ void msg_ack(CmdSource src, const Command *cmd) {
 
     // 인자를 붙일지는 명령의 종류로 정한다. 값이 0 인지로 판단하면
     // "DUTY 0" 의 답이 "OK DUTY" 가 되어 버린다 — 0 도 유효한 값이다.
-    if (cmd->type == CMD_SET_DUTY) {
-        msg_emitf(sink_of(src), "OK %s %ld", cmd_name(cmd->type), (long)cmd->arg);
-    } else {
-        msg_emitf(sink_of(src), "OK %s", cmd_name(cmd->type));
+    switch (cmd->type) {
+        case CMD_SET_DUTY:
+            msg_emitf(sink_of(src), "OK %s %ld", cmd_name(cmd->type), (long)cmd->arg);
+            break;
+        case CMD_BUTTON:
+            msg_emitf(sink_of(src), "OK %s %s", cmd_name(cmd->type), button_name((Button)cmd->arg));
+            break;
+        default:
+            msg_emitf(sink_of(src), "OK %s", cmd_name(cmd->type));
+            break;
     }
 }
 
@@ -230,22 +236,30 @@ void msg_ack_err(CmdSource src, const char *why) {
     msg_emitf(sink_of(src), "ERR %s", (why != nullptr) ? why : "unknown");
 }
 
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty,
-                  uint8_t out, const char *gate) {
-    if (sense == nullptr) return;
+void msg_snapshot(const SenseUpdate *sense, const StatusView *v) {
+    if (sense == nullptr || v == nullptr) return;
 
-    // 한 줄로 현재 상태 전부. 앱이 재연결했을 때 이 줄만으로 화면을 다시 그릴 수 있어야 한다.
-    //
-    // duty 와 out 을 나눠 싣는 이유: 호기 게이트가 닫혀 있으면 둘이 다르다.
-    // "명령은 들어갔는데 왜 안 도나" 를 gate 한 단어로 답하게 하려는 것이다.
+    // duty 와 out 을 나눠 싣는 이유: 실행 화면이 아니거나 게이트가 닫혀 있으면 둘이 다르다.
+    // "강도는 정했는데 왜 안 도나" 를 gate 한 단어로 답하게 하려는 것이다.
     msg_emitf(SINK_BOTH,
-              "STATE motor=%s duty=%u out=%u gate=%s bpm=%.1f amp=%.1f settled=%d sig=%d",
-              motor_on ? "on" : "off",
-              (unsigned)duty,
-              (unsigned)out,
-              gate ? gate : "?",
+              "STATE screen=%s level=%s duty=%u out=%u gate=%s fault=%s "
+              "bpm=%.1f amp=%.1f settled=%d sig=%d",
+              v->screen ? v->screen : "?",
+              v->level ? v->level : "?",
+              (unsigned)v->duty,
+              (unsigned)v->out,
+              v->gate ? v->gate : "?",
+              v->fault ? v->fault : "?",
               sense->bpm,
               sense->amp,
               (sense->flags & FLAG_SETTLED) ? 1 : 0,
               (sense->flags & FLAG_SIGNAL_OK) ? 1 : 0);
+}
+
+// 16x2 LCD 를 테두리째 그린다. 테두리 안 글자는 실제 LCD 에 찍히는 것과 한 글자도 다르지 않다.
+void msg_screen(const char *line0, const char *line1) {
+    msg_emit (SINK_SERIAL, "+----------------+");
+    msg_emitf(SINK_SERIAL, "|%-16.16s|", line0 ? line0 : "");
+    msg_emitf(SINK_SERIAL, "|%-16.16s|", line1 ? line1 : "");
+    msg_emit (SINK_SERIAL, "+----------------+");
 }

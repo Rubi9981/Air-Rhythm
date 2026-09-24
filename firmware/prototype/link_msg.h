@@ -45,19 +45,34 @@ void msg_sense_stall();
 
 // --- 12바이트 바이너리 텔레메트리 (BLE 전용) ---
 // app_task 가 TELEMETRY_INTERVAL_MS 마다 호출한다.
-// motor_on 은 명령 상태, duty 는 설정값, out 은 호기 게이트를 거쳐 지금 실제로 나가는 값.
+// motor_on 은 실행 화면인가, duty 는 강도가 뜻하는 값, out 은 지금 실제로 나가는 값.
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
                         bool motor_on, uint8_t duty, uint8_t out);
 
 // --- 명령 응답 ---
-// 앱 UI 가 낙관적 업데이트에 의존하지 않도록 모든 명령에 답한다.
-void msg_ack(CmdSource src, const Command *c);          // "OK START" / "OK DUTY 200"
+// 시리얼 사용자가 명령이 먹었는지 바로 알 수 있도록 모든 명령에 답한다.
+void msg_ack(CmdSource src, const Command *c);          // "OK BTN OK" / "OK DUTY 200"
 void msg_ack_err(CmdSource src, const char *why);       // "ERR unknown"
 
-// 연결 직후 / CMD_STATUS 응답. 앱이 재연결했을 때 현재 상태를 즉시 그릴 수 있어야 한다.
-// duty 는 명령으로 설정된 값, out 은 호기 게이트를 통과해 지금 실제로 나가는 값.
-// gate 는 out 이 0 일 때 그 이유("inhale" / "settling" / "nosig" ...).
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty,
-                  uint8_t out, const char *gate);
+// STATE 한 줄에 싣는 것. 문자열은 app_logic 의 이름표를 그대로 받는다.
+typedef struct {
+    const char *screen;    // 지금 화면
+    const char *level;     // 타진 강도
+    uint8_t     duty;      // 강도가 뜻하는 duty (서비스 모드면 직접 준 값)
+    uint8_t     out;       // 지금 실제로 모터에 나가는 duty
+    const char *gate;      // out 이 왜 그 값인지 ("idle" / "run" / "service" / "fault")
+    const char *fault;     // 고장 원인. 없으면 "none"
+} StatusView;
+
+// 연결 직후 / CMD_STATUS 응답. 이 한 줄로 기기 상태를 모두 알 수 있어야 한다.
+void msg_snapshot(const SenseUpdate *sense, const StatusView *v);
+
+// LCD 에 그릴 두 줄이 바뀌었을 때 시리얼에 LCD 모양으로 그린다:
+//   +----------------+
+//   |NORMAL MODE  1/3|
+//   |POWER   < MID  >|
+//   +----------------+
+// LCD 가 붙기 전(5단계)에도 화면 흐름을 시리얼로 따라갈 수 있게 하려는 것이다.
+void msg_screen(const char *line0, const char *line1);
 
 #endif  // LINK_MSG_H

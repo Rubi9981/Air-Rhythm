@@ -56,6 +56,19 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 #define MOTOR_BRAKE_ON   HIGH
 #define MOTOR_BRAKE_OFF  LOW
 
+// 타진 강도 약/중/강 → PWM duty.
+// ★ 임시값이다. 6단계에서 실측으로 정한다 — 단순히 33/66/100% 로 나누지 않고,
+//   (1) 안정적으로 기동하는가 (2) 강도가 단계적으로 느는가 (3) 과열되지 않는가
+//   (4) 브레이크로 충분히 빨리 서는가 를 보고 고른다. BLDC 는 약 38(15%) 아래에서
+//   아예 돌지 않는 것으로 추정되므로 DUTY_LOW 는 그 위여야 한다.
+#define DUTY_LOW    64
+#define DUTY_MID    128
+#define DUTY_HIGH   192
+
+// 서비스 모드 — 시리얼 DUTY <n> 으로 화면 흐름을 거치지 않고 모터를 직접 돌린다.
+// 위 duty 값을 실측할 때만 1 로 빌드한다. 평소 빌드에서는 반드시 0.
+#define SERVICE_MODE 0
+
 // 루프백 자가진단용 입력 핀. 계측기가 없을 때 PWM 이 실제로 핀에서 나가는지
 // 확인하는 통로다. 점퍼선으로 PIN_MOTOR_PWM → 이 핀을 이어주고 SELFTEST 를 친다.
 // 평소에는 아무것도 연결하지 않아도 되고, 연결해도 동작에 영향이 없다.

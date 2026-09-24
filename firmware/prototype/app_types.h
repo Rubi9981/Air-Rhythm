@@ -72,24 +72,33 @@ typedef struct {
 // --- 앱 → 기기 방향의 계약 ---
 //
 // SenseUpdate 가 센서→앱의 유일한 통로이듯, 반대 방향도 통로를 하나만 둔다.
-// 시리얼 명령과 BLE write 가 같은 Command 로 수렴하므로, BLE 없이도 전체 명령
-// 경로를 시리얼로 테스트할 수 있다.
+// 모터를 켜는 경로는 기기 버튼 하나뿐이다. 물리 버튼(4단계)과 시리얼 BTN 이 같은
+// CMD_BUTTON 으로 수렴하므로, 버튼 배선 없이도 전체 화면 흐름을 시리얼로 시험할 수 있다.
+// BLE 는 모니터링 전용이다 — 앱에서 오는 명령은 받지 않는다.
 //
-// 연결·해제까지 명령으로 흘려보내는 이유: app_task 가 모든 상태 변화를 한 곳에서
+// 연결까지 명령으로 흘려보내는 이유: app_task 가 모든 상태 변화를 한 곳에서
 // 같은 방식으로 받게 되고, BLE 콜백이 세우는 전역 플래그가 하나도 생기지 않는다.
 
 typedef enum {
     CMD_NONE = 0,
     CMD_BLE_CONNECTED,      // 콜백이 알린다 → app_task 가 스냅샷을 보낸다
-    CMD_BLE_DISCONNECTED,   // Fail-Safe: 모터 정지 + STATE_IDLE
-    CMD_START,              // 타격 허용. 실제 출력은 duty 와 호기 게이트가 정한다. arg 없음
-    CMD_STOP,               // 정상 정지 (긴급 정지 배제, 시작/정지만 운용)
-    CMD_SET_DUTY,           // arg = 0~255. 동작 중에도 바꿀 수 있다
-    CMD_CALIBRATE,          // 캘리브레이션 모드 진입. 모터는 멈춘다
+    CMD_BUTTON,             // arg = Button. 화면 상태 머신으로 간다
+    CMD_STOP,               // 원격 정지 — 어느 화면에서든 모터를 멈추고 모드 선택으로
+    CMD_SET_DUTY,           // arg = 0~255. 서비스 모드(SERVICE_MODE) 전용 직접 구동 — duty 실측용
     CMD_STATUS,             // 현재 상태를 다시 보내달라
-    CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용)
+    CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용). 정지 중에만
     CMD_BREATH_RESET,       // 호흡 검출기를 처음부터 다시 정착시킨다(필터·위상·진폭·호흡률)
 } CmdType;
+
+// 5방향 스위치. 값 자체가 Command.arg 로 큐를 지나간다.
+typedef enum {
+    BTN_UP = 0,
+    BTN_DOWN,
+    BTN_LEFT,
+    BTN_RIGHT,
+    BTN_OK,
+    BTN_COUNT,
+} Button;
 
 typedef enum {
     SRC_SERIAL = 0,
@@ -104,6 +113,6 @@ typedef struct {
 
 // --- 큐 ---
 extern QueueHandle_t q_sense;   // 센서 → 앱. 매 틱(50Hz) 스냅샷 하나
-extern QueueHandle_t q_cmd;     // 시리얼·BLE 콜백 → 앱. 드물게 오는 명령
+extern QueueHandle_t q_cmd;     // 시리얼·버튼·BLE 콜백 → 앱. 드물게 오는 명령
 
 #endif  // APP_TYPES_H
