@@ -109,8 +109,8 @@ static void sense_task(void *) {
 
         measure_sample_period(&pending);
 
-        const int16_t raw = (int16_t)analogRead(SENSOR_PIN);
-        const int16_t mv  = (int16_t)read_averaged_mv(SENSOR_PIN);
+        const int16_t raw = (int16_t)analogRead(PIN_BREATH_ADC);
+        const int16_t mv  = (int16_t)read_averaged_mv(PIN_BREATH_ADC);
         sense_step(raw, mv, &pending);
 
         // 큐가 가득 찼을 때 대기시간 0 — 큐가 차도 여기서 멈추지 않는다.

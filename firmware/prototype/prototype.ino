@@ -34,7 +34,7 @@ QueueHandle_t q_cmd   = nullptr;
 void setup() {
   Serial.begin(115200);
   analogReadResolution(12);                       // 기본 12비트(0~4095)
-  analogSetPinAttenuation(SENSOR_PIN, ADC_6db);   // 0~1750mV (ESP32-S3)
+  analogSetPinAttenuation(PIN_BREATH_ADC, ADC_6db);   // 0~1750mV (ESP32-S3)
 
   // 모터를 가장 먼저 확정한다 — 부팅 중 어떤 경로로도 돌지 않게.
   motor_init();
