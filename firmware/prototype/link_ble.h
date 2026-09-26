@@ -22,6 +22,7 @@
 
 #ifndef LINK_BLE_H
 #define LINK_BLE_H
+#include <stdint.h>
 
 // setup() 에서 한 번. GATT 서버를 세우고 광고를 시작한다.
 // q_cmd 가 만들어진 뒤에 부를 것 — 콜백이 바로 들어올 수 있다.

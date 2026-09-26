@@ -42,33 +42,55 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class RxWriteCallbacks : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic *characteristic) override {
-        // TODO(구현):
-        //   1. characteristic->getValue() 를 널 종단 문자열로 복사 (길이 상한을 둘 것)
-        //   2. cmd_parse() 로 Command 로 바꾼다
-        //   3. src = SRC_BLE 로 채우고 cmd_submit()
-        //   4. 파싱 실패해도 여기서 응답하지 않는다 — ACK 는 app_task 담당
-        // 이 함수 안에서 모드·모터·전역 상태를 건드리지 말 것.
-        (void)characteristic;
+        std::string rxValue = characteristic->getValue();
+        if (rxValue.length() > 0) {
+            Command cmd = {};
+            if (cmd_parse(rxValue.c_str(), &cmd)) {
+                cmd.src = SRC_BLE;
+                cmd_submit(&cmd);
+            }
+        }
     }
 };
 
 // ---------------------------------------------------------------------------
 
 void ble_init() {
-    // TODO(구현):
-    //   BLEDevice::init("...");  BLEDevice::setMTU(185);
-    //   server = BLEDevice::createServer();  server->setCallbacks(new ServerCallbacks());
-    //   서비스 생성 → tx_char(NOTIFY) / rx(WRITE) 특성 추가 → rx->setCallbacks(new RxWriteCallbacks())
-    //   tx_char->addDescriptor(new BLE2902());
-    //   서비스 start() → 광고 파라미터 설정 → BLEDevice::startAdvertising()
-    //
-    //   보안: 본딩을 켜지 말 것 (헤더 주석 4번). 페어링 없이 열어둔다.
+    BLEDevice::init("ESP32_Vest_BLE");
+    BLEDevice::setMTU(185);
+
+    server = BLEDevice::createServer();
+    server->setCallbacks(new ServerCallbacks());
+
+    BLEService *pService = server->createService(SVC_UUID);
+
+    tx_char = pService->createCharacteristic(
+        TX_UUID,
+        BLECharacteristic::PROPERTY_NOTIFY
+    );
+    tx_char->addDescriptor(new BLE2902());
+
+    BLECharacteristic *rx_char = pService->createCharacteristic(
+        RX_UUID,
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+    );
+    rx_char->setCallbacks(new RxWriteCallbacks());
+
+    pService->start();
+
+    // 부팅 직후 블루투스 자동 재연결 대기 시작
+    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+    pAdvertising->addServiceUUID(SVC_UUID);
+    pAdvertising->setScanResponse(true);
+    pAdvertising->setMinPreferred(0x06);
+    pAdvertising->setMinPreferred(0x12);
+    BLEDevice::startAdvertising();
 }
 
 void ble_tick() {
     if (want_advertise) {
         want_advertise = false;
-        // TODO(구현): BLEDevice::startAdvertising();
+        BLEDevice::startAdvertising();
         // 필요하면 해제 직후 잠깐 텀을 두도록 만들 것 (틱 카운터로).
     }
 }
@@ -76,8 +98,7 @@ void ble_tick() {
 bool ble_is_connected() { return ble_connected; }
 
 void ble_send_line(const char *line) {
-    if (!ble_connected || !tx_char) return;      // 미연결이면 조용히 버린다
-    // TODO(구현): tx_char->setValue((uint8_t*)line, strlen(line)); tx_char->notify();
-    //   호출자가 이미 sink 를 골라 부르므로 여기서 빈도 제한을 하지 않는다.
-    (void)line;
+    if (!ble_connected || !tx_char) return;
+    tx_char->setValue((uint8_t*)line, strlen(line));
+    tx_char->notify(); // ★ 실제로 앱으로 BLE Notify 전송
 }

@@ -46,6 +46,9 @@ void msg_sense_stall();
 void msg_ack(CmdSource src, const Command *c);          // "OK MOTOR ON"
 void msg_ack_err(CmdSource src, const char *why);       // "ERR unknown"
 
+//--파형 전달----
+//50Hz 실시간 파형 및 호기/흡기 상태 전송 전용 함수
+void msg_send_waveform(const SenseUpdate *sense);
 // 연결 직후 / CMD_STATUS 응답. 앱이 재연결했을 때 현재 상태를 즉시 그릴 수 있어야 한다.
 // duty 는 명령으로 설정된 값, out 은 호기 게이트를 통과해 지금 실제로 나가는 값.
 // gate 는 out 이 0 일 때 그 이유("inhale" / "settling" / "nosig" ...).

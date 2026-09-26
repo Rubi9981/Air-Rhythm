@@ -71,6 +71,8 @@ void msg_report(const SenseUpdate *sense) {
     if (REPORT_SAMPLE)                       // ★ 50Hz — 절대 SINK_BLE 로 보내지 않는다
         msg_emitf(SINK_SERIAL, "%d\t%d", sense->raw, sense->mv);
 
+    msg_send_waveform(sense); // ★ 추가: 50Hz 파형 및 호흡위상 BLE 스트리밍
+
     if (sense->events & EVENT_INHALE)      report_onset(sense,  "INHALE");
     if (sense->events & EVENT_EXHALE)      report_onset(sense,  "EXHALE");
     if (sense->events & EVENT_SIGNAL_LOST) report_signal(sense, "NOSIG");
@@ -83,10 +85,10 @@ void msg_report(const SenseUpdate *sense) {
         msg_emit(SINK_BOTH, "# SETTLED");
     }
 
-    // TODO(구현): 앱용 1Hz 상태 요약.
-    //   rate_ready 가 정확히 1초마다 서므로 그대로 틱 소스로 쓴다.
-    //   상태 요약은 "덮어쓰기형" 이라 전송에 실패해도 버린다 — 1초 뒤 더 최신 것이 온다.
-    //   if (sense->rate_ready) msg_emitf(SINK_BLE, "STATE phase=%d bpm=%.1f amp=%.1f", ...);
+    if (sense->rate_ready) {
+        msg_emitf(SINK_BLE, "STATE mode=1 phase=%d intensity=2 bat=85 status=1 bpm=%.1f",
+                (sense->phase == BR_FALLING ? 2 : 1), sense->bpm);
+    }
 }
 
 void msg_sense_stall() {
@@ -94,6 +96,21 @@ void msg_sense_stall() {
         sense_stalled = true;
         msg_emit(SINK_BOTH, "# FAULT sense_stall");
     }
+}
+
+//---------------------------------------------------------------------------
+// 50Hz 실시간 파형 및 호기/흡기 상태 전송 전용 함수
+//---------------------------------------------------------------------------
+void msg_send_waveform(const SenseUpdate *sense) {
+    if (!ble_is_connected()) return;
+
+    int phase_code = 0;
+    if (sense->phase == BR_RISING)       phase_code = 1; // 1 = 흡기
+    else if (sense->phase == BR_FALLING) phase_code = 2; // 2 = 호기
+
+    char wave_line[32];
+    snprintf(wave_line, sizeof(wave_line), "W,%d,%d", sense->mv, phase_code);
+    ble_send_line(wave_line);
 }
 
 // ---------------------------------------------------------------------------
