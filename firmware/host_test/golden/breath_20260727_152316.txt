@@ -1,0 +1,15 @@
+# SETTLED
+# NOSIG n=647 amp=5.0
+# SIGOK n=726 amp=7.5
+# INHALE n=733 delay=120ms
+# EXHALE n=850 delay=140ms
+# INHALE n=946 delay=140ms bpm=14.1
+# EXHALE n=1006 delay=300ms bpm=14.1
+# INHALE n=1092 delay=120ms bpm=16.7
+# EXHALE n=1321 delay=200ms bpm=16.7
+# INHALE n=1441 delay=100ms bpm=14.1
+# EXHALE n=1522 delay=120ms bpm=14.1
+# INHALE n=1610 delay=120ms bpm=15.7
+# EXHALE n=1845 delay=140ms bpm=15.7
+# INHALE n=1955 delay=200ms bpm=14.1
+# EXHALE n=2059 delay=120ms bpm=14.1

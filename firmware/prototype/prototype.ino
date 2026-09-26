@@ -4,7 +4,8 @@
 // (breath_config.h / breath_filter.* / breath_slope.*)은 복사본이며 수정하지 않았다.
 //
 //   core 1  sense_task (priority 5)  ADC → 대역통과 → 검출 → q_sense        정확히 20ms
-//   core 0  app_task   (priority 2)  q_sense → 출력 (이후 모터·BLE)         큐가 페이싱
+//   core 0  app_task   (priority 2)  q_sense·q_cmd → 화면 상태 머신 → 모터    큐가 페이싱
+//   core 0  ui_task    (priority 1)  버튼 → q_cmd (5단계부터 LCD)            5ms
 //   core 1  loopTask   (priority 1)  재워둔다
 //
 // 왜 나눴는가: Serial.printf 는 115200 baud 에서 40자 한 줄이 약 3.5ms 이고 TX 버퍼가
@@ -27,6 +28,7 @@
 #include "link_ble.h"
 #include "task_app.h"
 #include "task_sense.h"
+#include "task_ui.h"
 
 QueueHandle_t q_sense = nullptr;
 QueueHandle_t q_cmd   = nullptr;
@@ -34,7 +36,7 @@ QueueHandle_t q_cmd   = nullptr;
 void setup() {
   Serial.begin(115200);
   analogReadResolution(12);                       // 기본 12비트(0~4095)
-  analogSetPinAttenuation(SENSOR_PIN, ADC_6db);   // 0~1750mV (ESP32-S3)
+  analogSetPinAttenuation(PIN_BREATH_ADC, ADC_6db);   // 0~1750mV (ESP32-S3)
 
   // 모터를 가장 먼저 확정한다 — 부팅 중 어떤 경로로도 돌지 않게.
   motor_init();
@@ -57,9 +59,10 @@ void setup() {
 
   sense_start();
   app_start();
+  ui_start();          // 버튼 입력은 q_cmd 로만 간다. 앱 태스크가 먼저 떠 있어야 받는다
 }
 
 void loop() {
-  // 두 태스크가 알아서 돈다. loopTask 는 core 1 에 있으므로 재워서 센서 전용으로 둔다.
+  // 태스크들이 알아서 돈다. loopTask 는 core 1 에 있으므로 재워서 센서 전용으로 둔다.
   vTaskDelay(portMAX_DELAY);
 }

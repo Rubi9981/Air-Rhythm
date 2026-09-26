@@ -1,0 +1,85 @@
+# SETTLED
+# EXHALE n=760 delay=2820ms
+# INHALE n=851 delay=120ms
+# EXHALE n=911 delay=300ms
+# INHALE n=984 delay=140ms bpm=22.6
+# EXHALE n=1044 delay=140ms bpm=22.6
+# INHALE n=1126 delay=140ms bpm=21.8
+# EXHALE n=1186 delay=340ms bpm=21.8
+# INHALE n=1261 delay=140ms bpm=22.2
+# EXHALE n=1322 delay=140ms bpm=22.2
+# INHALE n=1412 delay=120ms bpm=21.7
+# EXHALE n=1472 delay=440ms bpm=21.7
+# INHALE n=1536 delay=120ms bpm=22.2
+# EXHALE n=1596 delay=460ms bpm=22.2
+# INHALE n=1656 delay=160ms bpm=22.2
+# EXHALE n=1716 delay=460ms bpm=22.2
+# INHALE n=1787 delay=120ms bpm=22.9
+# EXHALE n=1847 delay=340ms bpm=22.9
+# INHALE n=1928 delay=120ms bpm=22.9
+# EXHALE n=1988 delay=280ms bpm=22.9
+# INHALE n=2096 delay=440ms bpm=22.9
+# EXHALE n=2156 delay=300ms bpm=22.9
+# INHALE n=2256 delay=100ms bpm=21.3
+# EXHALE n=2316 delay=220ms bpm=21.3
+# INHALE n=2392 delay=120ms bpm=21.3
+# EXHALE n=2452 delay=320ms bpm=21.3
+# INHALE n=2551 delay=340ms bpm=18.9
+# EXHALE n=2616 delay=140ms bpm=18.9
+# INHALE n=2720 delay=120ms bpm=18.8
+# EXHALE n=2793 delay=140ms bpm=18.8
+# INHALE n=2883 delay=120ms bpm=18.8
+# EXHALE n=3121 delay=120ms bpm=18.8
+# INHALE n=3215 delay=140ms bpm=18.4
+# EXHALE n=3308 delay=140ms bpm=18.4
+# INHALE n=3399 delay=100ms bpm=17.8
+# EXHALE n=3459 delay=140ms bpm=17.8
+# INHALE n=3568 delay=120ms bpm=17.8
+# EXHALE n=3628 delay=160ms bpm=17.8
+# INHALE n=3729 delay=140ms bpm=17.8
+# EXHALE n=3792 delay=140ms bpm=17.8
+# INHALE n=3900 delay=120ms bpm=17.5
+# EXHALE n=3967 delay=120ms bpm=17.5
+# INHALE n=4080 delay=380ms bpm=17.5
+# EXHALE n=4140 delay=120ms bpm=17.5
+# INHALE n=4259 delay=360ms bpm=17.5
+# EXHALE n=4328 delay=120ms bpm=17.5
+# INHALE n=4447 delay=360ms bpm=16.8
+# EXHALE n=4507 delay=180ms bpm=16.8
+# INHALE n=4606 delay=180ms bpm=16.8
+# EXHALE n=4671 delay=120ms bpm=16.8
+# INHALE n=4778 delay=260ms bpm=16.8
+# EXHALE n=4854 delay=120ms bpm=16.8
+# INHALE n=4950 delay=120ms bpm=17.4
+# EXHALE n=5010 delay=300ms bpm=17.4
+# INHALE n=5132 delay=620ms bpm=17.4
+# EXHALE n=5202 delay=140ms bpm=17.4
+# INHALE n=5303 delay=180ms bpm=17.4
+# EXHALE n=5364 delay=120ms bpm=17.4
+# INHALE n=5431 delay=100ms bpm=17.4
+# EXHALE n=5491 delay=340ms bpm=17.4
+# INHALE n=5642 delay=100ms bpm=17.4
+# EXHALE n=5702 delay=340ms bpm=17.4
+# INHALE n=5795 delay=100ms bpm=17.5
+# EXHALE n=5855 delay=240ms bpm=17.5
+# INHALE n=5947 delay=100ms bpm=19.6
+# EXHALE n=6007 delay=360ms bpm=19.6
+# INHALE n=6104 delay=260ms bpm=19.6
+# EXHALE n=6244 delay=180ms bpm=19.6
+# INHALE n=6314 delay=100ms bpm=19.1
+# EXHALE n=6380 delay=120ms bpm=19.1
+# INHALE n=6633 delay=1120ms bpm=19.1
+# NOSIG n=6814 amp=5.0
+# SIGOK n=6939 amp=7.5
+# EXHALE n=7075 delay=100ms bpm=19.1
+# INHALE n=7154 delay=100ms bpm=14.3
+# EXHALE n=7219 delay=140ms bpm=14.3
+# INHALE n=7355 delay=320ms bpm=14.3
+# EXHALE n=7619 delay=280ms bpm=14.3
+# INHALE n=7762 delay=220ms bpm=9.4
+# NOSIG n=7770 amp=5.0
+# SIGOK n=8052 amp=7.8
+# EXHALE n=8109 delay=420ms bpm=9.4
+# INHALE n=8205 delay=120ms bpm=7.4
+# EXHALE n=8265 delay=160ms bpm=7.4
+# INHALE n=8326 delay=120ms bpm=7.4

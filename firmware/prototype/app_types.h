@@ -42,12 +42,15 @@
 typedef struct {
     uint32_t n;            // [샘플] slope_update 후의 detector.n (지금까지 처리한 샘플 수)
     int16_t  raw, mv;      // [샘플] 이번 샘플의 원시값 (CSV 출력용)
+    int16_t  filt;         // [샘플] 대역통과 필터링 후 호흡 파형 (그래프 출력용)
 
     int8_t   phase;        // [상태] BR_RISING=흡기 중 / BR_FALLING=호기 중 / BR_UNKNOWN
     uint8_t  flags;        // [상태] FLAG_SETTLED | FLAG_SIGNAL_OK
     uint8_t  events;       // [사건] EVENT_* 비트. 0 이면 이벤트 없음
     uint8_t  rate_ready;   // [진단] 1 이면 아래 rate_* 가 유효 (약 1초에 한 번)
     uint16_t drops;        // [진단] 큐가 차서 버린 틱 수. 정상 동작에서는 항상 0
+    uint16_t epoch;        // [상태] 검출기 초기화 회차. 부팅 시 0, sense_request_reset() 이 처리될 때마다 +1.
+                           //        앱은 요청한 회차와 다른 샘플(초기화 전에 큐에 들어간 것)을 믿지 않는다
 
     // [사건] 아래 셋은 events != 0 일 때만 의미가 있다. events 가 유효성 플래그
     // 역할을 하므로, 이벤트가 없는 틱에 옛 값이 남아 있어도 무해하다.
@@ -69,26 +72,38 @@ typedef struct {
 // --- 앱 → 기기 방향의 계약 ---
 //
 // SenseUpdate 가 센서→앱의 유일한 통로이듯, 반대 방향도 통로를 하나만 둔다.
-// 시리얼 명령과 BLE write 가 같은 Command 로 수렴하므로, BLE 없이도 전체 명령
-// 경로를 시리얼로 테스트할 수 있다.
+// 모터를 켜는 경로는 기기 버튼 하나뿐이다. 물리 버튼(4단계)과 시리얼 BTN 이 같은
+// CMD_BUTTON 으로 수렴하므로, 버튼 배선 없이도 전체 화면 흐름을 시리얼로 시험할 수 있다.
+// BLE 는 모니터링 전용이다 — 앱에서 오는 명령은 받지 않는다.
 //
-// 연결·해제까지 명령으로 흘려보내는 이유: app_task 가 모든 상태 변화를 한 곳에서
+// 연결까지 명령으로 흘려보내는 이유: app_task 가 모든 상태 변화를 한 곳에서
 // 같은 방식으로 받게 되고, BLE 콜백이 세우는 전역 플래그가 하나도 생기지 않는다.
 
 typedef enum {
     CMD_NONE = 0,
     CMD_BLE_CONNECTED,      // 콜백이 알린다 → app_task 가 스냅샷을 보낸다
-    CMD_BLE_DISCONNECTED,   // 1단계에서 여기에 모터 정지가 붙는다
-    CMD_MOTOR_ON,
-    CMD_MOTOR_OFF,
-    CMD_SET_DUTY,           // arg = 0~255
+    CMD_BUTTON,             // arg = Button. 화면 상태 머신으로 간다
+    CMD_STOP,               // 원격 정지 — 어느 화면에서든 모터를 멈추고 모드 선택으로
+    CMD_SET_DUTY,           // arg = 0~255. 서비스 모드(SERVICE_MODE) 전용 직접 구동 — duty 실측용
     CMD_STATUS,             // 현재 상태를 다시 보내달라
-    CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용)
+    CMD_SELFTEST,           // 계측기 없이 PWM/BRAKE 출력을 되읽어 본다(배선 검증용). 정지 중에만
+    CMD_BREATH_RESET,       // 호흡 검출기를 처음부터 다시 정착시킨다(필터·위상·진폭·호흡률)
 } CmdType;
+
+// 5방향 스위치. 값 자체가 Command.arg 로 큐를 지나간다.
+typedef enum {
+    BTN_UP = 0,
+    BTN_DOWN,
+    BTN_LEFT,
+    BTN_RIGHT,
+    BTN_OK,
+    BTN_COUNT,
+} Button;
 
 typedef enum {
     SRC_SERIAL = 0,
     SRC_BLE    = 1,
+    SRC_KEY    = 2,     // 기기의 5방향 스위치 (task_ui)
 } CmdSource;
 
 typedef struct {
@@ -99,6 +114,6 @@ typedef struct {
 
 // --- 큐 ---
 extern QueueHandle_t q_sense;   // 센서 → 앱. 매 틱(50Hz) 스냅샷 하나
-extern QueueHandle_t q_cmd;     // 시리얼·BLE 콜백 → 앱. 드물게 오는 명령
+extern QueueHandle_t q_cmd;     // 시리얼·버튼·BLE 콜백 → 앱. 드물게 오는 명령
 
 #endif  // APP_TYPES_H

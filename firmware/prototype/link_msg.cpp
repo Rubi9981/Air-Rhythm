@@ -1,3 +1,15 @@
+/**
+ * ============================================================================
+ * [link_msg.cpp] 출력 계층 구현체 (12바이트 텔레메트리 + 시리얼 디버그 출력)
+ * ============================================================================
+ *
+ * 역할:
+ *   - 12바이트 바이너리 텔레메트리 패킷 빌드 및 BLE Notify 전송 (20Hz)
+ *   - 호흡 이벤트(흡기/호기 Onset, 무신호 등) 시리얼 및 BLE 라인 출력
+ *   - 명령 수신 응답(ACK / ERR) 및 기기 상태 스냅샷 전송
+ * ============================================================================
+ */
+
 #include "link_msg.h"
 
 #include <Arduino.h>
@@ -7,44 +19,130 @@
 #include "board_config.h"
 #include "link_ble.h"
 #include "link_cmd.h"
+#include "breath_slope.h"   // BR_RISING(+1), BR_FALLING(-1), BR_UNKNOWN(0)
 
-static bool sense_stalled = false;   // 센서 태스크 정지 상태. 진입·복귀에서 한 번씩만 알린다
+// 센서 태스크 멈춤(Stall) 상태 추적용 플래그
+static bool s_sense_stalled = false;
 
-// ---------------------------------------------------------------------------
-// 분배 — 문자열이 밖으로 나가는 유일한 통로
-// ---------------------------------------------------------------------------
+// 정착 완료는 회차마다 한 번씩 알린다. 검출기를 초기화하면 다시 알릴 수 있게 된다.
+static uint16_t s_epoch             = 0;
+static bool     s_announced_settled = false;
+
+// ============================================================================
+// [1. 기본 메시지 방출 (Emit) 헬퍼]
+// ============================================================================
 
 void msg_emit(MsgSink to, const char *line) {
-    if (to & SINK_SERIAL) Serial.println(line);
-    if (to & SINK_BLE)    ble_send_line(line);   // 미연결이면 안에서 버린다
+    if (line == nullptr) return;
+
+    if (to & SINK_SERIAL) {
+        Serial.println(line);
+    }
+    if (to & SINK_BLE) {
+        ble_send_line(line);  // BLE 미연결 시 내부에서 자동 폐기
+    }
 }
 
 void msg_emitf(MsgSink to, const char *fmt, ...) {
-    char line[128];                               // STATE 줄이 가장 길다(약 85자)
+    char line[160];                               // STATE 줄이 가장 길다(약 130자)
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(line, sizeof line, fmt, ap);
+    vsnprintf(line, sizeof(line), fmt, ap);
     va_end(ap);
+
     msg_emit(to, line);
 }
 
-// ---------------------------------------------------------------------------
-// 정기 보고
-// ---------------------------------------------------------------------------
+// ============================================================================
+// [2. 12바이트 바이너리 텔레메트리 패킷 빌더] - BLE 통신 전용 (20Hz)
+// ============================================================================
+/*
+ * 패킷 구조 (12 Bytes):
+ *   [0] 0x55 (Header 1)
+ *   [1] 0xAA (Header 2)
+ *   [2] Device State (0x00: IDLE, 0x01: RUNNING, 0xFF: ERROR(FAULT)). 0x02 는 예약(구 CALIBRATING)
+ *   [3] Chest Pressure Low Byte (int16 Little Endian, mV 단위)
+ *   [4] Chest Pressure High Byte
+ *   [5] Respiration Phase (0x00: NONE, 0x01: INHALE, 0x02: EXHALE)
+ *   [6] Motor On (0x00: OFF, 0x01: ON) — 실행 화면인가. 실제로 도는지는 [9] 를 볼 것
+ *   [7] Power Status (0x64 = 100%, 유선 상시 전원)
+ *   [8] Duty (0~255) — 선택한 강도가 뜻하는 값
+ *   [9] Out  (0~255) — 지금 실제로 나가는 값
+ *   [10] Error Code (0x00: Normal)
+ *   [11] Checksum (XOR of Bytes 2..10)
+ *
+ * [6]=1 인데 [9]=0 이면 "실행 중이지만 흡기 중(또는 정착 전·무신호)이라 대기" 다.
+ * 이유까지 필요하면 STATE 텍스트 줄의 gate= 를 본다.
+ */
+void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
+                        bool motor_on, uint8_t duty, uint8_t out) {
+    if (sense == nullptr) return;
 
-// 지연은 극점 → 확정까지 걸린 샘플 수. 오프라인 지표와 같은 값이다.
-// ev_n 은 det.n 이 아니라 이벤트가 확정된 샘플이어야 한다(app_types.h 참조).
+    uint8_t pkt[12];
+
+    // [0-1] 헤더
+    pkt[0] = 0x55;
+    pkt[1] = 0xAA;
+
+    // [2] 기기 상태
+    pkt[2] = deviceState;
+
+    // [3-4] 흉부 센서 압력값 (필터링 후 호흡 파형 -> signed 16-bit LE)
+    int16_t pressure_filt = sense->filt;
+    pkt[3] = (uint8_t)(pressure_filt & 0xFF);
+    pkt[4] = (uint8_t)((pressure_filt >> 8) & 0xFF);
+
+    // [5] 호흡 위상 매핑
+    //   BR_RISING(+1)  -> 0x01 (INHALE: 들숨)
+    //   BR_FALLING(-1) -> 0x02 (EXHALE: 날숨)
+    //   기타(0)        -> 0x00 (NONE: 판정 불가)
+    uint8_t phase_code = 0x00;
+    if (sense->phase == BR_RISING) {
+        phase_code = 0x01;
+    } else if (sense->phase == BR_FALLING) {
+        phase_code = 0x02;
+    }
+    pkt[5] = phase_code;
+
+    // [6] 모터 명령 상태
+    pkt[6] = motor_on ? 0x01 : 0x00;
+
+    // [7] 전원 상태 (유선 공급으로 항상 100%)
+    pkt[7] = 0x64;
+
+    // [8] 설정 duty, [9] 실제 출력 duty
+    pkt[8] = duty;
+    pkt[9] = out;
+
+    // [10] 에러 코드
+    pkt[10] = 0x00;
+
+    // [11] 체크섬 계산: Byte[2] ~ Byte[10] XOR
+    uint8_t checksum = 0;
+    for (int i = 2; i <= 10; i++) {
+        checksum ^= pkt[i];
+    }
+    pkt[11] = checksum;
+
+    // BLE Notify 전송
+    ble_send_telemetry(pkt, sizeof(pkt));
+}
+
+// ============================================================================
+// [3. 시리얼 디버그 및 이벤트 리포트]
+// ============================================================================
+
 static void report_onset(const SenseUpdate *sense, const char *kind) {
     const unsigned long delay_ms = (unsigned long)(sense->ev_n - sense->ext_n) * PERIOD_MS;
     char line[96];
-    int written = snprintf(line, sizeof line, "# %s n=%lu delay=%lums",
-                     kind, (unsigned long)sense->ev_n, delay_ms);
-    if (sense->bpm > 0.0f && written > 0 && written < (int)sizeof line)
-        snprintf(line + written, sizeof line - written, " bpm=%.1f", sense->bpm);
-    // TODO(구현): 유실 감지를 위해 seq 번호를 덧붙일지 결정.
-    //   번들 API 의 notify() 는 반환값이 없어 전송 성공을 알 수 없다. 앱이 빠진
-    //   번호를 보고 감지하게 하면 펌웨어가 재전송 버퍼를 들 필요가 없어진다.
-    //   붙인다면 Serial 쪽 형식도 함께 바뀌므로 host_test 기준을 갱신할 것.
+
+    int written = snprintf(line, sizeof(line), "# %s n=%lu delay=%lums",
+                          kind, (unsigned long)sense->ev_n, delay_ms);
+
+    if (sense->bpm > 0.0f && written > 0 && written < (int)sizeof(line)) {
+        snprintf(line + written, sizeof(line) - written, " bpm=%.1f", sense->bpm);
+    }
+
     msg_emit(SINK_BOTH, line);
 }
 
@@ -53,104 +151,119 @@ static void report_signal(const SenseUpdate *sense, const char *kind) {
 }
 
 void msg_report(const SenseUpdate *sense) {
-    if (sense_stalled) {                           // 샘플이 다시 오기 시작했다
-        sense_stalled = false;
+    if (sense == nullptr) return;
+
+    // 센서 태스크 복구 감지
+    if (s_sense_stalled) {
+        s_sense_stalled = false;
         msg_emit(SINK_BOTH, "# FAULT sense_ok");
     }
 
-    // 큐가 차서 버린 틱이 있었다. 정상 동작에서는 절대 나오지 않는 줄이다.
-    // 이 경우 아래 이벤트들의 n/amp 는 마지막 것만 남아 있다.
-    if (sense->drops)
+    // 검출기 초기화 후 첫 샘플. 이 줄 이후의 이벤트는 새 회차의 것이다.
+    if (sense->epoch != s_epoch) {
+        s_epoch = sense->epoch;
+        s_announced_settled = false;
+        msg_emitf(SINK_BOTH, "# RESET epoch=%u", (unsigned)s_epoch);
+    }
+
+    // 큐 드롭(과부하) 감지
+    if (sense->drops > 0) {
         msg_emitf(SINK_BOTH, "# QDROP n=%lu ticks=%u", (unsigned long)sense->n, sense->drops);
+    }
 
-    if (REPORT_RATE && sense->rate_ready)
+    // 1초 단위 샘플링 주기 진단 출력
+    if (REPORT_RATE && sense->rate_ready) {
         msg_emitf(SINK_SERIAL, "# fs=%.2fHz avg=%luus min=%luus max=%luus",
-                  sense->rate_fs, (unsigned long)sense->rate_avg_us,
-                  (unsigned long)sense->rate_min_us, (unsigned long)sense->rate_max_us);
+                  sense->rate_fs,
+                  (unsigned long)sense->rate_avg_us,
+                  (unsigned long)sense->rate_min_us,
+                  (unsigned long)sense->rate_max_us);
+    }
 
-    if (REPORT_SAMPLE)                       // ★ 50Hz — 절대 SINK_BLE 로 보내지 않는다
+    // 샘플 단위 출력 (raw<TAB>mv)
+    if (REPORT_SAMPLE) {
         msg_emitf(SINK_SERIAL, "%d\t%d", sense->raw, sense->mv);
+    }
 
-    msg_send_waveform(sense); // ★ 추가: 50Hz 파형 및 호흡위상 BLE 스트리밍
-
+    // 호흡 검출 이벤트 출력
     if (sense->events & EVENT_INHALE)      report_onset(sense,  "INHALE");
     if (sense->events & EVENT_EXHALE)      report_onset(sense,  "EXHALE");
     if (sense->events & EVENT_SIGNAL_LOST) report_signal(sense, "NOSIG");
     if (sense->events & EVENT_SIGNAL_OK)   report_signal(sense, "SIGOK");
 
-    // 정착 완료는 한 번만 알린다.
-    static bool announced_settled = false;
-    if (!announced_settled && (sense->flags & FLAG_SETTLED)) {
-        announced_settled = true;
+    // 필터 정착(Settle) 완료 알림 (회차마다 1회)
+    if (!s_announced_settled && (sense->flags & FLAG_SETTLED)) {
+        s_announced_settled = true;
         msg_emit(SINK_BOTH, "# SETTLED");
-    }
-
-    if (sense->rate_ready) {
-        msg_emitf(SINK_BLE, "STATE mode=1 phase=%d intensity=2 bat=85 status=1 bpm=%.1f",
-                (sense->phase == BR_FALLING ? 2 : 1), sense->bpm);
     }
 }
 
 void msg_sense_stall() {
-    if (!sense_stalled) {
-        sense_stalled = true;
+    if (!s_sense_stalled) {
+        s_sense_stalled = true;
         msg_emit(SINK_BOTH, "# FAULT sense_stall");
     }
 }
 
-//---------------------------------------------------------------------------
-// 50Hz 실시간 파형 및 호기/흡기 상태 전송 전용 함수
-//---------------------------------------------------------------------------
-void msg_send_waveform(const SenseUpdate *sense) {
-    if (!ble_is_connected()) return;
-
-    int phase_code = 0;
-    if (sense->phase == BR_RISING)       phase_code = 1; // 1 = 흡기
-    else if (sense->phase == BR_FALLING) phase_code = 2; // 2 = 호기
-
-    char wave_line[32];
-    snprintf(wave_line, sizeof(wave_line), "W,%d,%d", sense->mv, phase_code);
-    ble_send_line(wave_line);
-}
-
-// ---------------------------------------------------------------------------
-// 명령 응답
-// ---------------------------------------------------------------------------
+// ============================================================================
+// [4. 명령 응답 및 상태 스냅샷]
+// ============================================================================
 
 // ACK 는 명령이 온 곳으로만 보낸다. 시리얼로 친 명령의 답이 앱 화면에 뜨면 혼란스럽다.
-static MsgSink sink_of(CmdSource src) { return src == SRC_BLE ? SINK_BLE : SINK_SERIAL; }
+static MsgSink sink_of(CmdSource src) {
+    return (src == SRC_BLE) ? SINK_BLE : SINK_SERIAL;
+}
 
 void msg_ack(CmdSource src, const Command *cmd) {
-    if (!cmd) return;
+    if (cmd == nullptr) return;
 
     // 인자를 붙일지는 명령의 종류로 정한다. 값이 0 인지로 판단하면
     // "DUTY 0" 의 답이 "OK DUTY" 가 되어 버린다 — 0 도 유효한 값이다.
-    if (cmd->type == CMD_SET_DUTY)
-        msg_emitf(sink_of(src), "OK %s %ld", cmd_name(cmd->type), (long)cmd->arg);
-    else
-        msg_emitf(sink_of(src), "OK %s", cmd_name(cmd->type));
+    switch (cmd->type) {
+        case CMD_SET_DUTY:
+            msg_emitf(sink_of(src), "OK %s %ld", cmd_name(cmd->type), (long)cmd->arg);
+            break;
+        case CMD_BUTTON:
+            msg_emitf(sink_of(src), "OK %s %s", cmd_name(cmd->type), button_name((Button)cmd->arg));
+            break;
+        default:
+            msg_emitf(sink_of(src), "OK %s", cmd_name(cmd->type));
+            break;
+    }
+}
+
+void msg_key(Button b, bool accepted) {
+    msg_emitf(SINK_SERIAL, accepted ? "# KEY %s" : "# KEY %s ignored", button_name(b));
 }
 
 void msg_ack_err(CmdSource src, const char *why) {
-    msg_emitf(sink_of(src), "ERR %s", why);
+    msg_emitf(sink_of(src), "ERR %s", (why != nullptr) ? why : "unknown");
 }
 
-void msg_snapshot(const SenseUpdate *sense, bool motor_on, uint8_t duty,
-                  uint8_t out, const char *gate) {
-    if (!sense) return;
+void msg_snapshot(const SenseUpdate *sense, const StatusView *v) {
+    if (sense == nullptr || v == nullptr) return;
 
-    // 한 줄로 현재 상태 전부. 앱이 재연결했을 때 이 줄만으로 화면을 다시 그릴 수 있어야 한다.
-    //
-    // duty 와 out 을 나눠 싣는 이유: 호기 게이트가 닫혀 있으면 둘이 다르다.
-    // "명령은 들어갔는데 왜 안 도나" 를 gate 한 단어로 답하게 하려는 것이다.
+    // duty 와 out 을 나눠 싣는 이유: 실행 화면이 아니거나 게이트가 닫혀 있으면 둘이 다르다.
+    // "강도는 정했는데 왜 안 도나" 를 gate 한 단어로 답하게 하려는 것이다.
     msg_emitf(SINK_BOTH,
-              "STATE motor=%s duty=%u out=%u gate=%s bpm=%.1f amp=%.1f settled=%d sig=%d",
-              motor_on ? "on" : "off",
-              (unsigned)duty,
-              (unsigned)out,
-              gate ? gate : "?",
+              "STATE screen=%s level=%s duty=%u out=%u gate=%s fault=%s "
+              "bpm=%.1f amp=%.1f settled=%d sig=%d",
+              v->screen ? v->screen : "?",
+              v->level ? v->level : "?",
+              (unsigned)v->duty,
+              (unsigned)v->out,
+              v->gate ? v->gate : "?",
+              v->fault ? v->fault : "?",
               sense->bpm,
               sense->amp,
-              (sense->flags & FLAG_SETTLED)   ? 1 : 0,
+              (sense->flags & FLAG_SETTLED) ? 1 : 0,
               (sense->flags & FLAG_SIGNAL_OK) ? 1 : 0);
+}
+
+// 16x2 LCD 를 테두리째 그린다. 테두리 안 글자는 실제 LCD 에 찍히는 것과 한 글자도 다르지 않다.
+void msg_screen(const char *line0, const char *line1) {
+    msg_emit (SINK_SERIAL, "+----------------+");
+    msg_emitf(SINK_SERIAL, "|%-16.16s|", line0 ? line0 : "");
+    msg_emitf(SINK_SERIAL, "|%-16.16s|", line1 ? line1 : "");
+    msg_emit (SINK_SERIAL, "+----------------+");
 }
