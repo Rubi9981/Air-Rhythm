@@ -146,6 +146,11 @@ static_assert(PERIOD_MS * (uint32_t)FS_HZ == 1000,
 #define APP_PRIORITY    2
 #define APP_STACK       8192   // Serial.printf("%f") 의 부동소수 포맷팅 + 이후 BLE 대비
 
+// UI(버튼, 5단계부터 LCD)는 앱보다 낮다 — UI 가 바쁘거나 멈춰도 모터 판단이 밀리지 않는다.
+#define UI_CORE         0
+#define UI_PRIORITY     1
+#define UI_STACK        3072
+
 // 50Hz × 32 = 640ms 버퍼. core 0 이 순간 바빠도(BLE 연결 수립 등) 샘플을 잃지 않는다.
 #define Q_SENSE_DEPTH 32
 

@@ -5,7 +5,7 @@
  *
  * 역할:
  *   - 센서 태스크(Core 1)로부터 큐(q_sense)를 통해 전달된 SenseUpdate 소비 (50Hz)
- *   - 시리얼·버튼 명령 큐(q_cmd)를 화면 상태 머신(app_logic)에 반영
+ *   - 시리얼·버튼(task_ui) 명령 큐(q_cmd)를 화면 상태 머신(app_logic)에 반영
  *   - 상태 머신이 정한 duty 를 매 틱 motor_set() (레벨 트리거)
  *   - 화면이 바뀌면 LCD 두 줄을 알림 (지금은 시리얼에 LCD 모양으로, 5단계에서 실제 LCD)
  *   - 호흡 모드가 요청하면 검출기 초기화를 센서 태스크에 전달 (sense_request_reset)
@@ -99,10 +99,14 @@ static void apply_command(const Command *cmd, uint32_t now_ms) {
             send_snapshot();    // 모니터 앱이 현재 상태를 즉시 그린다
             break;
 
-        case CMD_BUTTON:
-            if (logic_button(&s_model, (Button)cmd->arg, now_ms)) msg_ack(cmd->src, cmd);
-            else                                                  msg_ack_err(cmd->src, "ignored");
+        // 물리 버튼(SRC_KEY)과 시리얼 BTN 은 같은 상태 머신으로 간다. 기록 형식만 다르다.
+        case CMD_BUTTON: {
+            const bool accepted = logic_button(&s_model, (Button)cmd->arg, now_ms);
+            if (cmd->src == SRC_KEY) msg_key((Button)cmd->arg, accepted);
+            else if (accepted)       msg_ack(cmd->src, cmd);
+            else                     msg_ack_err(cmd->src, "ignored");
             break;
+        }
 
         case CMD_STOP:
             logic_stop(&s_model, now_ms);

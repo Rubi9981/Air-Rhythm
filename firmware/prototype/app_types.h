@@ -103,6 +103,7 @@ typedef enum {
 typedef enum {
     SRC_SERIAL = 0,
     SRC_BLE    = 1,
+    SRC_KEY    = 2,     // 기기의 5방향 스위치 (task_ui)
 } CmdSource;
 
 typedef struct {

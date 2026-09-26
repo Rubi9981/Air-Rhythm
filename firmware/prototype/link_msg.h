@@ -54,6 +54,10 @@ void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
 void msg_ack(CmdSource src, const Command *c);          // "OK BTN OK" / "OK DUTY 200"
 void msg_ack_err(CmdSource src, const char *why);       // "ERR unknown"
 
+// 물리 버튼 입력 기록: "# KEY OK" / "# KEY OK ignored" (입력 잠금·FAULT·그 화면에서 쓰지 않는 버튼).
+// 시리얼 로그만으로 어떤 버튼이 눌렸고 먹었는지 알 수 있게 한다.
+void msg_key(Button b, bool accepted);
+
 // STATE 한 줄에 싣는 것. 문자열은 app_logic 의 이름표를 그대로 받는다.
 typedef struct {
     const char *screen;    // 지금 화면

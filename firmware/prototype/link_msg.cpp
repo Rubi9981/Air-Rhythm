@@ -232,6 +232,10 @@ void msg_ack(CmdSource src, const Command *cmd) {
     }
 }
 
+void msg_key(Button b, bool accepted) {
+    msg_emitf(SINK_SERIAL, accepted ? "# KEY %s" : "# KEY %s ignored", button_name(b));
+}
+
 void msg_ack_err(CmdSource src, const char *why) {
     msg_emitf(sink_of(src), "ERR %s", (why != nullptr) ? why : "unknown");
 }
