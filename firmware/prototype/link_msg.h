@@ -47,7 +47,7 @@ void msg_sense_stall();
 // app_task 가 TELEMETRY_INTERVAL_MS 마다 호출한다.
 // motor_on 은 실행 화면인가, duty 는 강도가 뜻하는 값, out 은 지금 실제로 나가는 값.
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
-                        bool motor_on, uint8_t duty, uint8_t out);
+                        bool motor_on, uint8_t duty, uint8_t out, uint8_t mode);
 
 // --- 명령 응답 ---
 // 시리얼 사용자가 명령이 먹었는지 바로 알 수 있도록 모든 명령에 답한다.

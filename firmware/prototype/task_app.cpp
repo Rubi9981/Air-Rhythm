@@ -212,11 +212,15 @@ static void app_task(void *) {
         // 5. BLE 텔레메트리 주기적 송신 (20Hz). motor_set() 뒤에 두어 out 이 이번 틱 값이 되게 한다.
         unsigned long tnow = millis();
         if (ble_is_connected() && (tnow - last_telemetry_time >= TELEMETRY_INTERVAL_MS)) {
+            // 현재 화면이 호흡 설정/진행 흐름이면 0x02(호흡 감지 모드), 아니면 0x01(일반 모드)
+            uint8_t current_mode = (s_model.screen == SCR_BREATH_SETUP || logic_in_breath_flow(&s_model)) ? 0x02 : 0x01;
+
             msg_send_telemetry(&sense,
                                device_state(),
                                logic_is_running(&s_model),
                                model_duty(),
-                               motor_get());
+                               motor_get(),
+                               current_mode);
             last_telemetry_time = tnow;
         }
 

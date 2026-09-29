@@ -75,7 +75,7 @@ void msg_emitf(MsgSink to, const char *fmt, ...) {
  * 이유까지 필요하면 STATE 텍스트 줄의 gate= 를 본다.
  */
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
-                        bool motor_on, uint8_t duty, uint8_t out) {
+                        bool motor_on, uint8_t duty, uint8_t out,uint8_t mode) {
     if (sense == nullptr) return;
 
     uint8_t pkt[12];
@@ -115,7 +115,7 @@ void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
     pkt[9] = out;
 
     // [10] 에러 코드
-    pkt[10] = 0x00;
+    pkt[10] = mode;
 
     // [11] 체크섬 계산: Byte[2] ~ Byte[10] XOR
     uint8_t checksum = 0;
