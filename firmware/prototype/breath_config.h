@@ -7,6 +7,11 @@
 //
 // 시간은 전부 샘플 수로 다룬다(고정 dt). 펌웨어가 vTaskDelayUntil 로 정확히 50Hz 를
 // 지키므로 dt 가 상수이고, 그러면 EMA 계수도 상수가 되어 매 샘플 나눗셈이 사라진다.
+//
+// 조정값은 #ifndef 로 감싸 두었다. 호스트 평가(scripts/evaluate.py)가 -DK_SLOPE=0.3f
+// 처럼 컴파일 옵션으로 바꿔 가며 성적을 비교하기 위해서다. 기기 빌드는 옵션을 주지
+// 않으므로 여기 적힌 값이 그대로 쓰인다. FS_HZ 는 PERIOD_MS 와 static_assert 로 묶여
+// 있고 ONSET_RING 은 배열 크기라 감싸지 않는다.
 
 #ifndef BREATH_CONFIG_H
 #define BREATH_CONFIG_H
@@ -24,32 +29,66 @@ typedef float bfloat;
 #define DT_S         (1.0f / FS_HZ)
 
 // --- 대역통과 (breath/config.py) ---
+#ifndef HP_HZ
 #define HP_HZ        0.08f     // 고역: 약 5 bpm (드리프트 제거)
+#endif
+#ifndef LP_HZ
 #define LP_HZ        0.70f     // 저역: 약 42 bpm (노이즈 제거)
+#endif
 
 // --- 기울기 트리거 (지연을 지배) ---
+#ifndef SLOPE_TAU_S
 #define SLOPE_TAU_S  0.08f     // 기울기 평활 시상수(초)
+#endif
+#ifndef AVG_TAU_S
 #define AVG_TAU_S    8.0f      // 평균|기울기| 추정 시상수
+#endif
+#ifndef K_SLOPE
 #define K_SLOPE      0.25f     // 데드밴드 = K_SLOPE × 평균|기울기|
+#endif
+#ifndef SLOPE_FLOOR
 #define SLOPE_FLOOR  1.0f      // 데드밴드 절대 하한(mV/s)
+#endif
 
 // --- 정확도 장치 ---
+#ifndef MIN_PHASE_S
 #define MIN_PHASE_S  1.2f      // 전환 직후 반대 전환 금지(초)
+#endif
+#ifndef MID_GATE
 #define MID_GATE     1         // 흡기는 포락선 중점 아래, 호기는 위에서만 허용
+#endif
+#ifndef PROM_RATIO
 #define PROM_RATIO   0.0f      // 골/마루에서 진폭의 n%만큼 상승/하강한 뒤 흡기/호기 확정. 0 = off
+#endif
+#ifndef MIN_AMP
 #define MIN_AMP      5.0f      // 최근 진폭(p-p)이 이보다 작으면 판정 보류(mV)
+#endif
+#ifndef ENV_DECAY_S
 #define ENV_DECAY_S  6.0f      // 진폭 포락선 완화 시상수(초)
+#endif
 
+#ifndef SETTLE_S
 #define SETTLE_S     12.0f     // 시작 과도응답 구간(판정 보류)
+#endif
+#ifndef POLARITY
 #define POLARITY     (+1.0f)   // +1: 상승=흡기. 센서 반대로 붙였으면 -1
+#endif
 
 // --- 무신호 판정 (scripts/monitor_breath.py) ---
+#ifndef NO_SIGNAL_HYST
 #define NO_SIGNAL_HYST 1.5f    // 복귀는 MIN_AMP × 이 배수를 넘어야 인정
+#endif
 
 // --- 호흡률 ---
+#ifndef RATE_WINDOW
 #define RATE_WINDOW  5         // 최근 간격 몇 개의 중앙값
+#endif
+#ifndef RATE_MIN_S
 #define RATE_MIN_S   1.4f
+#endif
+#ifndef RATE_MAX_S
 #define RATE_MAX_S   12.0f
+#endif
 // 파이썬은 흡기 시각을 무한 리스트로 들고 간격을 거른 "뒤" 최근 5개를 쓴다.
 // 펌웨어는 링버퍼라, 걸러지고도 5개가 남도록 넉넉히 잡는다.
 #define ONSET_RING   12

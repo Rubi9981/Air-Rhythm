@@ -46,6 +46,7 @@ PC 에서 개발·분석할 때, C 이식본(`firmware/`)은 esp32-s3에서 동�
   - [검출 알고리즘 — 기울기](#검출-알고리즘--기울기-slopedetector)
   - [마커 위치와 검출 지연](#마커-위치와-검출-지연)
   - [파이썬 → C 이식](#파이썬--c-이식)
+  - [정확도 평가](#정확도-평가--기준-라벨로-채점)
 - [실행 순서](#실행-순서)
   - [실시간으로 보기](#실시간으로-보기)
 - [앞으로 할 일](#앞으로-할-일)
@@ -120,6 +121,7 @@ ESP32-S3 없이 Arduino·FreeRTOS 를 pc에서 대신 실행하고 **펌웨어 �
 |---|---|
 | `run.sh` | 태스크를 나눈 구조(`drv_new`)와 나누기 전 구조(`drv_old`)의 출력이 **바이트 단위로 같은가** |
 | `golden.sh` | 지금 검출 결과가 저장된 골든과 같은가. `breath_slope.cpp` 등을 고칠 때 쓴다 |
+| `drv_eval.cpp` | 정확도 평가용 드라이버. 직접 부르지 않고 `scripts/evaluate.py` 가 빌드한다 |
 
 ```bash
 sh firmware/host_test/golden.sh            # 비교
@@ -145,6 +147,9 @@ PC 가 했다. 지금은 esp32가 직접 판정하므로 참고용으로만 남�
 | `detectors/base.py` | 검출기 인터페이스 `Detector.update(t,y)->event` 와 배열 재생 러너 `run_detector` |
 | `detectors/amplitude.py` | **진폭 히스테리시스 검출기** `AmplitudeDetector` — 골/마루에서 적응형 문턱만큼 되돌아오면 전환. 호흡률·무호흡 판정 포함 |
 | `detectors/slope.py` | **기울기 검출기** `SlopeDetector` — 평활 기울기의 부호 전환으로 전환. 중점 게이트로 반대편 요철을 거른다. 지연이 더 낮다(무호흡 없음) |
+| `reference.py` | 정확도 평가용 **기준 라벨** — 녹음 전체를 보고(비인과적) 골/마루를 찍는다. 라벨 파일 읽기·쓰기 |
+| `metrics.py` | 검출 결과를 기준 라벨로 채점 — 이벤트 짝짓기, 민감도·정밀도·실제 지연, 흡기 중 타진 비율 |
+| `io_firmware.py` | 펌웨어 C 소스를 호스트에서 빌드·재생(`drv_eval`). 조정값은 `-D` 로 바꾼다 |
 
 ### `plotting/` — 개발 pc에서 센서값 및 필터링 이후 파형 그래프 그리기 (검출 로직 없음)
 
@@ -162,6 +167,8 @@ PC 가 했다. 지금은 esp32가 직접 판정하므로 참고용으로만 남�
 | `compare_filters.py` | 1-pole vs 2차 Butterworth 대역통과 비교 | `python scripts/compare_filters.py data/xxx.csv` |
 | `detect_breath.py` | **진폭 방식** 검출 → 화살표 그래프 (+무호흡) | `python scripts/detect_breath.py data/xxx.csv` |
 | `detect_slope.py` | **기울기 방식** 검출 → 화살표 그래프 (저지연, 무호흡 없음) | `python scripts/detect_slope.py data/xxx.csv` |
+| `label_reference.py` | 기준 라벨 초안 → `data/labels/`, 검수용 그림 → `images/*_labels.png` | `python scripts/label_reference.py` |
+| `evaluate.py` | **정확도 평가** — 펌웨어 빌드를 기준 라벨로 채점, 파라미터 탐색, 기준선 비교 | `python scripts/evaluate.py` |
 
 각 스크립트 상단 `[설정]` 블록에 그 실행에만 관계된 조정값(창 크기·볼 구간·문턱 등)을 둔다.
 
@@ -302,7 +309,8 @@ mid = (env_hi + env_lo) / 2       # 중점 게이트 기준(MID_GATE)
 - `ONSET_MARK = "confirm"` (기본, 제품용): **확정 순간**에 마커/트리거. 실시간에선 지나간 골로 돌아갈 수 없으므로 이것이 맞다.
 - `ONSET_MARK = "extremum"`: 실제 골/마루로 소급(오프라인 분석용).
 
-콘솔에 평균 검출 지연(극점→확정)이 출력된다. 진폭 방식은 극점 근처가 평평해
+콘솔에 평균 검출 지연(극점→확정)이 출력된다. 이 극점은 **필터를 거친 신호의** 극점이라
+필터 자체의 위상 지연은 빠져 있다 — 실제 지연은 [정확도 평가](#정확도-평가--기준-라벨로-채점)로 잴 것. 진폭 방식은 극점 근처가 평평해
 **~150ms 아래로는 못 내려간다**(문턱을 더 낮추면 노이즈로 헛전환 폭증). 그래서
 **기울기 방식(`SlopeDetector`)** 으로 지연을 낮췄고(539→230ms), 그보다 더(≤100ms)
 낮추려면 **주기 예측(feed-forward)** 이 필요하다(논문·특허 방식).
@@ -365,6 +373,52 @@ sh firmware/host_test/run.sh      # 태스크 분리가 출력을 바꾸지 않�
 절대 시각 기준이라 오차가 누적되지 않으므로 `avg` 는 거의 항상 멀쩡하다 —
 흔들림은 `min`/`max` 에만 나타난다.** BLE·모터를 붙인 뒤 봐야 할 값은 이쪽이다.
 `# QDROP` 이 뜨면 core 0 이 640ms 넘게 막혔다는 뜻이다.
+
+---
+
+### 정확도 평가 — 기준 라벨로 채점
+
+`golden.sh` 는 "예전과 같은가", `breath_replay` 는 "안전 규칙을 지키는가"를 본다. 둘 다
+**실제 호흡과 맞는가**는 보지 않는다. 알고리즘을 바꾸면 골든은 당연히 깨지므로, 그 변경이
+개선인지는 여기서 숫자로 판단한 뒤 `golden.sh --update` 한다.
+
+```bash
+python scripts/label_reference.py                        # 1) 기준 라벨 초안 + 검수 그림
+python scripts/evaluate.py                               # 2) 현재 펌웨어 성적표
+python scripts/evaluate.py -D K_SLOPE=0.3                #    조정값 하나 바꿔서
+python scripts/evaluate.py --sweep K_SLOPE=0.2,0.25,0.3  #    여러 값 비교 (여러 번 주면 조합)
+python scripts/evaluate.py --save-baseline B.json        # 3) 채택한 성적을 기준선으로
+python scripts/evaluate.py --check B.json                #    기준선보다 나빠졌으면 종료코드 1
+```
+
+**채점 대상은 파이썬 검출기가 아니라 펌웨어 C 소스다.** `evaluate.py` 가 `firmware/prototype/`
+의 `task_sense` · `breath_filter` · `breath_slope` 를 호스트에서 빌드해 CSV 를 흘린다. 기기는
+`float`, 고정 `dt`, 링버퍼 bpm 으로 계산하므로 파이썬 검출기의 성적과 어긋날 수 있다.
+조정값은 `breath_config.h` 가 `#ifndef` 로 감싼 이름만 `-D` 로 바꿀 수 있다(기기 빌드는 그대로).
+
+**기준 라벨**(`data/labels/<녹음>.csv`)은 녹음 전체를 양방향 필터로 거른 뒤 골/마루를 찍은
+**초안**이다. 같은 센서의 신호로 만들었으므로 사람이 검수해야 한다: 그림을 보고 틀린 줄을
+고치고, 판단할 수 없는 구간(기침·자세 변경)엔 `skip` 줄을 넣고, 첫 줄을 `reviewed=yes` 로
+바꾼다. 검수 안 된 녹음은 성적표에 `*` 가 붙는다. 이미 있는 라벨은 덮어쓰지 않는다.
+
+| 지표 | 뜻 |
+|---|---|
+| Se / PPV / FP | 기준 극점과 ±(−0.3, +1.0)초 안에서 1:1 로 짝지은 민감도·정밀도·오검출 수 |
+| 지연 중앙/p90/최대 | **기준 극점에서 잰** 확정 지연. 기기가 보고하는 `delay`(자기가 추적한 극점 기준)와 다르다 |
+| 흡기% | 타진 가능(호기·정착·신호 정상) 샘플 중 실제로는 흡기였던 비율. **낮을수록 안전** |
+| 호기커버% | 실제 호기 샘플 중 타진 가능이었던 비율. 높을수록 치료 시간이 길다 |
+
+타진 가능 조건은 `breath_replay` 안전 규칙 1 과 같다. 실제 모터는 상태 머신이 여기서 더
+줄이므로 흡기% 는 상한이다. 흡기% 를 만드는 것은 주로 **흡기 onset 지연**이다 — 골을 지나
+흡기가 확정되기 전까지 위상이 아직 호기로 남아 있기 때문이다.
+
+채점할 수 없는 녹음은 자동으로 뺀다: mv 열이 없는 구버전 CSV(`drv_eval` 이 0 을 읽는다),
+표본화율이 50Hz 가 아닌 녹음(0723 의 두 파일: 20.5Hz, 46.6Hz — 시상수가 그만큼 틀어진다).
+
+> **첫 측정(자동 초안, 미검수):** 기기가 보고하는 지연 중앙값은 흡기 120ms · 호기 220ms 인데,
+> 기준 극점에서 잰 실제 지연은 흡기 **420ms** · 호기 **400ms** 였다. 차이는 인과적 대역통과
+> 필터의 위상 지연이다 — 기기의 `delay` 는 필터를 거친 뒤의 극점부터 재므로 이것을 볼 수 없다.
+> 타진 가능 시간의 약 26% 가 실제 흡기와 겹쳤다. 라벨 검수 후 다시 잴 것.
 
 ---
 

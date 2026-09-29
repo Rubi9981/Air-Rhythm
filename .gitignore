@@ -13,6 +13,11 @@ __pycache__/
 data/*
 !data/breath_*.csv
 
+# 기준 라벨(scripts/label_reference.py)도 같은 규칙 — 공유하는 녹음의 라벨만 올린다.
+!data/labels/
+data/labels/*
+!data/labels/breath_*.csv
+
 # 골든은 data/ 와 짝이다. 입력 CSV 가 공유되지 않는 녹음의 골든은 검증할 수 없으므로
 # 저장소에 두지 않는다. 로컬에서는 golden.sh --update 로 언제든 다시 만들 수 있다.
 firmware/host_test/golden/*

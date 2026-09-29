@@ -1,0 +1,25 @@
+# source=auto reviewed=no
+n,t_s,type
+10,0.217,exhale
+108,2.177,inhale
+203,4.077,exhale
+251,5.037,inhale
+337,6.757,exhale
+434,8.697,inhale
+471,9.437,exhale
+509,10.197,inhale
+603,12.077,exhale
+785,15.717,inhale
+827,16.561,exhale
+926,18.537,inhale
+1015,20.317,exhale
+1072,21.457,inhale
+1178,23.577,exhale
+1428,28.577,inhale
+1535,30.717,exhale
+1591,31.837,inhale
+1682,33.657,exhale
+1763,35.277,inhale
+1869,37.397,exhale
+1964,39.222,inhale
+2042,40.782,exhale
