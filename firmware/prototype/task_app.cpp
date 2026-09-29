@@ -40,6 +40,13 @@ enum : uint8_t {
     DEV_ERROR   = 0xFF,
 };
 
+// 텔레메트리 [10] 모드 코드. 모드 선택·서비스·FAULT 화면은 어느 모드도 아니다.
+enum : uint8_t {
+    DEV_MODE_NONE   = 0x00,
+    DEV_MODE_NORMAL = 0x01,
+    DEV_MODE_BREATH = 0x02,
+};
+
 // ============================================================================
 // app_task 만 소유한다. 다른 태스크·콜백은 절대 직접 만지지 않는다.
 // 바꾸려면 q_cmd 로 Command 를 보내야 한다.
@@ -58,6 +65,12 @@ static uint8_t model_duty() {
 static uint8_t device_state() {
     if (s_model.fault != FAULT_NONE) return DEV_ERROR;
     return logic_is_running(&s_model) ? DEV_RUNNING : DEV_IDLE;
+}
+
+static uint8_t device_mode() {
+    if (s_model.screen == SCR_NORMAL_SETUP || s_model.screen == SCR_NORMAL_RUN) return DEV_MODE_NORMAL;
+    if (s_model.screen == SCR_BREATH_SETUP || logic_in_breath_flow(&s_model))  return DEV_MODE_BREATH;
+    return DEV_MODE_NONE;
 }
 
 static void send_snapshot() {
@@ -216,7 +229,8 @@ static void app_task(void *) {
                                device_state(),
                                logic_is_running(&s_model),
                                model_duty(),
-                               motor_get());
+                               motor_get(),
+                               device_mode());
             last_telemetry_time = tnow;
         }
 

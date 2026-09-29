@@ -68,14 +68,15 @@ void msg_emitf(MsgSink to, const char *fmt, ...) {
  *   [7] Power Status (0x64 = 100%, 유선 상시 전원)
  *   [8] Duty (0~255) — 선택한 강도가 뜻하는 값
  *   [9] Out  (0~255) — 지금 실제로 나가는 값
- *   [10] Error Code (0x00: Normal)
+ *   [10] Mode (0x00: 없음 — 모드 선택·서비스·FAULT, 0x01: 일반, 0x02: 호흡)
+ *        구 Error Code 자리다. 고장은 [2]=0xFF 로 알린다
  *   [11] Checksum (XOR of Bytes 2..10)
  *
  * [6]=1 인데 [9]=0 이면 "실행 중이지만 흡기 중(또는 정착 전·무신호)이라 대기" 다.
  * 이유까지 필요하면 STATE 텍스트 줄의 gate= 를 본다.
  */
 void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
-                        bool motor_on, uint8_t duty, uint8_t out) {
+                        bool motor_on, uint8_t duty, uint8_t out, uint8_t mode) {
     if (sense == nullptr) return;
 
     uint8_t pkt[12];
@@ -114,8 +115,8 @@ void msg_send_telemetry(const SenseUpdate *sense, uint8_t deviceState,
     pkt[8] = duty;
     pkt[9] = out;
 
-    // [10] 에러 코드
-    pkt[10] = 0x00;
+    // [10] 모드
+    pkt[10] = mode;
 
     // [11] 체크섬 계산: Byte[2] ~ Byte[10] XOR
     uint8_t checksum = 0;
