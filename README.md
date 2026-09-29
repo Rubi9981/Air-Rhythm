@@ -121,7 +121,7 @@ ESP32-S3 없이 Arduino·FreeRTOS 를 pc에서 대신 실행하고 **펌웨어 �
 |---|---|
 | `run.sh` | 태스크를 나눈 구조(`drv_new`)와 나누기 전 구조(`drv_old`)의 출력이 **바이트 단위로 같은가** |
 | `golden.sh` | 지금 검출 결과가 저장된 골든과 같은가. `breath_slope.cpp` 등을 고칠 때 쓴다 |
-| `drv_eval.cpp` | 정확도 평가용 드라이버. 직접 부르지 않고 `scripts/evaluate.py` 가 빌드한다 |
+| `drv_eval.cpp` | 정확도 평가용 드라이버. 직접 부르지 않고 `scripts/evaluate.py`·`nk_check.py` 가 빌드한다. `filt` 인자를 주면 `breath_filter.cpp` 출력도 샘플마다 낸다 |
 
 ```bash
 sh firmware/host_test/golden.sh            # 비교
@@ -169,6 +169,8 @@ PC 가 했다. 지금은 esp32가 직접 판정하므로 참고용으로만 남�
 | `detect_slope.py` | **기울기 방식** 검출 → 화살표 그래프 (저지연, 무호흡 없음) | `python scripts/detect_slope.py data/xxx.csv` |
 | `label_reference.py` | 기준 라벨 초안 → `data/labels/`, 검수용 그림 → `images/*_labels.png` | `python scripts/label_reference.py` |
 | `evaluate.py` | **정확도 평가** — 펌웨어 빌드를 기준 라벨로 채점, 파라미터 탐색, 기준선 비교 | `python scripts/evaluate.py` |
+| `nk_check.py` | neurokit2 기준 vs 펌웨어(+키보드 라벨) — 흡기/호기 **진입 횟수·시각** 비교, `--plot` 으로 파형(cpp 필터)·검출 겹친 그래프 (`pip install neurokit2` 필요) | `python scripts/nk_check.py [-v] [--plot]` |
+| `record_labeled.py` | **키보드 정답 라벨과 함께 기록** — 들이쉬기 시작 `i`, 내쉬기 시작 `e`. 기기 이벤트 줄·샘플 유실 검사 포함 (`REPORT_SAMPLE = true` 필요) | `python scripts/record_labeled.py --id S01` |
 
 각 스크립트 상단 `[설정]` 블록에 그 실행에만 관계된 조정값(창 크기·볼 구간·문턱 등)을 둔다.
 

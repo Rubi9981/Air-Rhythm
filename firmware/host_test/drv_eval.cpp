@@ -12,20 +12,30 @@
 //       flags  FLAG_SETTLED | FLAG_SIGNAL_OK
 //       events EVENT_* 비트. 0 이면 이 줄은 상태 변화만 알린다
 //       ext_n  events 가 흡기/호기일 때 그 극점 샘플. 아니면 0
+//   F,n,y                      filt 를 주었을 때만, 매 샘플. 기기 대역통과 출력(float)
 //   E,n                        마지막 줄. 재생한 샘플 수
 //
-//   drv: drv_eval <csv>
+//   drv: drv_eval <csv> [filt]
+//
+// F 줄의 y 는 sense_step 안의 필터가 아니라, 같은 breath_filter.cpp 함수로 똑같이 초기화한
+// 필터를 옆에 하나 더 돌린 값이다(sense_step 의 필터는 task_sense.cpp 의 static 이라 밖에서
+// 못 읽는다). 입력·코드·초기화가 같으므로 값도 같아야 하고, 매 샘플 round(y) 가
+// SenseUpdate.filt 와 같은지 확인한다. 다르면 오류로 끝낸다.
 
+#include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <Arduino.h>
 #include "app_types.h"
 #include "breath_config.h"
+#include "breath_filter.h"
 #include "csv.h"
 #include "task_sense.h"
 
 int main(int argc, char **argv) {
-    if (argc < 2) { fprintf(stderr, "usage: drv_eval <csv>\n"); return 2; }
+    if (argc < 2) { fprintf(stderr, "usage: drv_eval <csv> [filt]\n"); return 2; }
+    const bool want_filt = argc > 2 && strcmp(argv[2], "filt") == 0;
 
     printf("C,HP_HZ=%g,LP_HZ=%g,SLOPE_TAU_S=%g,AVG_TAU_S=%g,K_SLOPE=%g,SLOPE_FLOOR=%g,"
            "MIN_PHASE_S=%g,MID_GATE=%d,PROM_RATIO=%g,MIN_AMP=%g,ENV_DECAY_S=%g,SETTLE_S=%g,"
@@ -36,12 +46,23 @@ int main(int argc, char **argv) {
            (double)POLARITY, (double)NO_SIGNAL_HYST);
 
     sense_reset();
+    BandpassButter2 bp;                  // sense_reset() 과 같은 초기화
+    bandpass_init(&bp, FS_HZ, HP_HZ, LP_HZ);
     SenseUpdate u = {};
     int8_t prev_phase = 127;         // 첫 샘플을 반드시 찍게 하는 불가능한 값
     uint8_t prev_flags = 0xFF;
     unsigned long n = 0;
     for (auto &r : read_csv(argv[1])) {
         sense_step((int16_t)r.raw, (int16_t)r.mv, &u);
+        if (want_filt) {
+            const bfloat y = bandpass_update(&bp, (bfloat)(int16_t)r.mv);
+            if ((int16_t)round(y) != u.filt) {
+                fprintf(stderr, "샘플 %lu: 옆 필터 %d != sense_step filt %d\n",
+                        n, (int)(int16_t)round(y), (int)u.filt);
+                return 1;
+            }
+            printf("F,%lu,%.5f\n", n, (double)y);
+        }
         if (u.events || u.phase != prev_phase || u.flags != prev_flags) {
             const bool onset = u.events & (EVENT_INHALE | EVENT_EXHALE);
             printf("S,%lu,%d,%u,%u,%lu,%.2f\n", n, (int)u.phase, (unsigned)u.flags,

@@ -97,11 +97,17 @@ def unfit_reason(csv_path, times=None):
     return None
 
 
-def replay(exe, csv_path):
+def replay(exe, csv_path, with_filt=False):
     """CSV 하나를 재생한다. 반환 dict 는 metrics.evaluate() 의 detection 인자 모양에
-    n_total·config·ext(흡기/호기 확정 n → 검출기가 추적한 극점 n)를 더한 것."""
-    res = subprocess.run([exe, csv_path], capture_output=True, text=True, check=True)
-    config, changes, n_total = {}, [], None
+    n_total·config·ext(흡기/호기 확정 n → 검출기가 추적한 극점 n)를 더한 것.
+
+    with_filt=True 면 'filt' 에 기기 대역통과 출력(breath_filter.cpp, float)을 샘플마다 담는다.
+    """
+    cmd = [exe, csv_path] + (["filt"] if with_filt else [])
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(f"drv_eval 실패 ({csv_path}): {res.stderr.strip()}")
+    config, changes, n_total, filt = {}, [], None, []
     inhale, exhale, bpm, ext = [], [], [], {}
     for line in res.stdout.splitlines():
         tag, _, rest = line.partition(",")
@@ -120,6 +126,8 @@ def replay(exe, csv_path):
             if events & EVENT_EXHALE:
                 exhale.append(n)
                 ext[n] = int(ext_n)
+        elif tag == "F":
+            filt.append(float(rest.partition(",")[2]))
         elif tag == "E":
             n_total = int(rest)
     if n_total is None:
@@ -133,5 +141,8 @@ def replay(exe, csv_path):
         for i in range(n, nxt[0]):
             phase_at[i] = phase
             hit_at[i] = hit
-    return {"phase": phase_at, "hit": hit_at, "inhale": inhale, "exhale": exhale,
-            "bpm": bpm, "ext": ext, "n_total": n_total, "config": config}
+    out = {"phase": phase_at, "hit": hit_at, "inhale": inhale, "exhale": exhale,
+           "bpm": bpm, "ext": ext, "n_total": n_total, "config": config}
+    if with_filt:
+        out["filt"] = filt
+    return out

@@ -87,6 +87,32 @@ def read_csv(path):
     return times, raws, mvs, phases
 
 
+def read_key_onsets(path):
+    """record_labeled.py 가 남긴 key 열에서 키보드 흡기/호기 진입 행 번호를 읽는다.
+
+    key 열이 없거나 비어 있으면 None. 행 번호는 read_csv() 와 같은 기준이다(같은 행을 건너뛴다).
+    반환: {"inhale": [n, ...], "exhale": [n, ...]}
+    """
+    out = {"inhale": [], "exhale": []}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if "key" not in (reader.fieldnames or []):
+            return None
+        n, prev = 0, ""
+        for row in reader:
+            try:
+                float(row["elapsed_s"])
+                float(row["raw"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            key = (row.get("key") or "").strip()
+            if key != prev and key in out:
+                out[key].append(n)
+            prev = key
+            n += 1
+    return out if out["inhale"] or out["exhale"] else None
+
+
 def spans_from_phases(times, phases):
     """기록된 phase 열에서 연속 구간 [(시작, 끝, 단계), ...] 을 만든다."""
     spans = []
