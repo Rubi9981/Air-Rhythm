@@ -28,9 +28,11 @@
 #include "link_ble.h"
 
 #include <NimBLEDevice.h>
+#include <string>
 
 #include "app_types.h"
 #include "link_cmd.h"
+#include "link_msg.h"
 
 // ============================================================================
 // [BLE UUID 및 설정 정의] - Android 앱 (BleUuids)과 100% 일치
@@ -45,6 +47,7 @@
 // ============================================================================
 static NimBLEServer         *s_server  = nullptr;
 static NimBLECharacteristic *s_tx_char = nullptr;
+static NimBLECharacteristic *s_rx_char  = nullptr;
 
 // BLE 스택(Core 0) 콜백이 쓰고 app_task(Core 0)가 읽는 단일 플래그
 static volatile bool s_ble_connected   = false;
@@ -69,7 +72,26 @@ class ServerCallbacks : public NimBLEServerCallbacks {
         (void)connInfo;
         (void)reason;
         s_ble_connected = false;
-        s_want_advertise = true; // 재광고는 콜백이 아닌 ble_tick()에서 안전하게 수행
+        s_want_advertise = true; // 재광고 요청
+    }
+};
+
+// ============================================================================
+// [RX Characteristic 콜백 클래스] - 앱에서 BLE로 전송한 제어 명령 수신
+// ============================================================================
+class RxCallbacks : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *pCharacteristic, NimBLEConnInfo &connInfo) override {
+        (void)connInfo;
+        std::string rxVal = pCharacteristic->getValue();
+        if (!rxVal.empty()) {
+            Command cmd = {};
+            if (cmd_parse(rxVal.c_str(), &cmd)) {
+                cmd.src = SRC_BLE;
+                cmd_submit(&cmd);
+            } else {
+                msg_ack_err(SRC_BLE, "unknown_cmd");
+            }
+        }
     }
 };
 
@@ -110,18 +132,21 @@ void ble_init() {
     // 6. Service 시작
     pService->start();  // 이 줄은 동작 안함
 
-    // 7. Advertising 시작
+    // 7. Advertising 시작 (자동 재연결 신속화를 위해 간격 20ms~40ms 지정)
     NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SVC_UUID);
     pAdvertising->enableScanResponse(true);
+    pAdvertising->setMinInterval(0x20); // 20ms
+    pAdvertising->setMaxInterval(0x40); // 40ms
     pAdvertising->start();
 }
 
 void ble_tick() {
-    // 연결 해제 후 재광고 요청 처리 (Non-blocking)
+    // 연결 해제 후 자동 재광고 처리 (Non-blocking)
     if (s_want_advertise) {
         s_want_advertise = false;
-        NimBLEDevice::startAdvertising();
+        NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
+        pAdvertising->start();
     }
 }
 
