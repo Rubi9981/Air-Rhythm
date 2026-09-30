@@ -7,7 +7,7 @@
  *   - 센서 태스크(Core 1)로부터 큐(q_sense)를 통해 전달된 SenseUpdate 소비 (50Hz)
  *   - 시리얼·버튼(task_ui) 명령 큐(q_cmd)를 화면 상태 머신(app_logic)에 반영
  *   - 상태 머신이 정한 duty 를 매 틱 motor_set() (레벨 트리거)
- *   - 화면이 바뀌면 LCD 두 줄을 알림 (지금은 시리얼에 LCD 모양으로, 5단계에서 실제 LCD)
+ *   - 화면이 바뀌면 LCD 두 줄을 UI 태스크에 넘김 (ui_show) + 시리얼에도 LCD 모양으로
  *   - 호흡 모드가 요청하면 검출기 초기화를 센서 태스크에 전달 (sense_request_reset)
  *   - 20Hz 주기로 BLE 텔레메트리 패킷 송신 (msg_send_telemetry)
  *   - 시리얼 디버그 리포트 방출 (msg_report)
@@ -32,6 +32,7 @@
 #include "link_cmd.h"
 #include "link_msg.h"
 #include "task_sense.h"
+#include "task_ui.h"
 
 // 텔레메트리 [2] 기기 상태 코드. 0x02 는 예약(구 CALIBRATING).
 enum : uint8_t {
@@ -92,7 +93,8 @@ static void publish_screen() {
     logic_render(&s_model, now);
     if (memcmp(now, s_shown, sizeof now) != 0) {
         memcpy(s_shown, now, sizeof now);
-        msg_screen(now[0], now[1]);
+        ui_show(now[0], now[1]);     // LCD — UI 태스크가 초당 최대 5번, 바뀐 줄만 그린다
+        msg_screen(now[0], now[1]);  // 시리얼에도 같은 모양으로 (디버깅용)
     }
 }
 

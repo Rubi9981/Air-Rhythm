@@ -5,7 +5,7 @@
 //
 //   core 1  sense_task (priority 5)  ADC → 대역통과 → 검출 → q_sense        정확히 20ms
 //   core 0  app_task   (priority 2)  q_sense·q_cmd → 화면 상태 머신 → 모터    큐가 페이싱
-//   core 0  ui_task    (priority 1)  버튼 → q_cmd (5단계부터 LCD)            5ms
+//   core 0  ui_task    (priority 1)  버튼 → q_cmd, 앱이 넘긴 화면 → LCD       5ms
 //   core 1  loopTask   (priority 1)  재워둔다
 //
 // 왜 나눴는가: Serial.printf 는 115200 baud 에서 40자 한 줄이 약 3.5ms 이고 TX 버퍼가
@@ -58,8 +58,8 @@ void setup() {
   ble_init();
 
   sense_start();
+  ui_start();          // 앱보다 먼저 — 앱의 첫 화면이 들어갈 화면 큐가 있어야 한다. 버튼 입력은 q_cmd 에 쌓인다
   app_start();
-  ui_start();          // 버튼 입력은 q_cmd 로만 간다. 앱 태스크가 먼저 떠 있어야 받는다
 }
 
 void loop() {
