@@ -73,11 +73,21 @@ static void level_down(AppModel *m) { if (m->level > LEVEL_LOW)  m->level = (Lev
 
 // 호흡 모드 시작(또는 RETRY). 모터는 이 화면들에서 출력 0 이고, 검출기를 처음부터 다시
 // 정착시킨다 (목표 4.2.1~3). 이전 회차의 위상·호흡수는 화면에서 지운다.
+// 정착까지 남은 시간(초, 올림). 시계가 아니라 새 회차에서 검출기가 처리한 샘플 수로 센다 —
+// 화면의 0 과 실제로 정착 완료되는 순간이 정확히 맞고, 초기화 요청이 한 틱 늦게 반영돼도 어긋나지 않는다.
+static uint8_t settle_left_s(uint32_t samples_done) {
+    const uint32_t per_s = (uint32_t)FS_HZ;
+    const uint32_t left  = samples_done < SETTLE_N ? SETTLE_N - samples_done : 0;
+    const uint32_t secs  = (left + per_s - 1) / per_s;
+    return (uint8_t)(secs > 99 ? 99 : secs);
+}
+
 static void start_breath(AppModel *m, uint32_t now_ms) {
     go(m, SCR_BREATH_INIT, now_ms);
-    m->reset_wanted = true;
-    m->phase        = BR_UNKNOWN;
-    m->bpm          = 0.0f;
+    m->reset_wanted  = true;
+    m->phase         = BR_UNKNOWN;
+    m->bpm           = 0.0f;
+    m->settle_left_s = settle_left_s(0);       // 새 회차의 샘플이 오기 전에는 전체 시간(12초)을 보인다
 }
 
 void logic_init(AppModel *m, uint32_t now_ms) {
@@ -244,7 +254,9 @@ static void breath_tick(AppModel *m, const SenseUpdate *s, uint32_t now_ms) {
 
     switch (m->screen) {
         case SCR_BREATH_INIT:
-            // 12초 카운트다운이 아니라 검출기의 "정착 완료" 로만 넘어간다 (목표 4.2.6~7).
+            // 남은 시간은 화면에 보여주기만 한다 (목표 4.2.5). 넘어가는 판단은 12초 카운트다운이
+            // 아니라 검출기의 "정착 완료" 로만 한다 (목표 4.2.6~7).
+            if (current) m->settle_left_s = settle_left_s(s->n);
             if (current && (s->flags & FLAG_SETTLED)) {
                 go(m, SCR_BREATH_WAIT, now_ms);
                 return;                          // 이 샘플의 이벤트로 곧바로 시작하지 않는다
@@ -411,7 +423,7 @@ void logic_render(const AppModel *m, ScreenLines out) {
 
         case SCR_BREATH_INIT:
             put_line(out[0], "Detecting breath");
-            put_line(out[1], "Please Wait...");
+            put_line(out[1], "Please Wait %2us", (unsigned)m->settle_left_s);
             break;
 
         case SCR_BREATH_WAIT:

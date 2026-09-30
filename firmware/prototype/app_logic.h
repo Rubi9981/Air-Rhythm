@@ -93,6 +93,7 @@ typedef struct {
     uint16_t sense_epoch;      // 요청한 초기화 회차. 이와 다른 샘플은 초기화 전의 것이라 믿지 않는다
     int8_t   phase;            // 표시용: 마지막 샘플의 위상 (BR_RISING / BR_FALLING / BR_UNKNOWN)
     float    bpm;              // 표시용: 마지막 샘플의 호흡수. 0 이면 아직 모름
+    uint8_t  settle_left_s;    // 표시용: 초기화 화면의 남은 정착 시간(초). 검출기가 처리한 샘플 수로 센다
 } AppModel;
 
 #define LCD_COLS 16

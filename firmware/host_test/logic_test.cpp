@@ -258,6 +258,7 @@ static void test_breath_retry_back() {
     CHECK(m.screen == SCR_BREATH_INIT);
     CHECK(logic_reset_wanted(&m));               // 12초 초기화를 다시 한다
     CHECK(m.phase == BR_UNKNOWN);                // 이전 회차의 위상은 화면에서 지운다
+    CHECK(m.settle_left_s == 12);                // 남은 시간도 처음부터
 
     logic_reset_issued(&m, 5);
     feed(&m, smp(5), 1, &t);
@@ -556,9 +557,20 @@ static void test_render_breath() {
     };
 
     to_breath_init(&m, &t);
-    show("Detecting breath", "Please Wait...  ");
+    show("Detecting breath", "Please Wait 12s ");   // 새 회차 샘플이 오기 전: 전체 시간
     logic_reset_issued(&m, 1);
-    feed(&m, smp(1), 1, &t);
+    // 남은 시간은 검출기가 처리한 샘플 수(n)로 센다 — 50샘플 = 1초, 올림
+    SenseUpdate init = smp(1, BR_UNKNOWN, 0, false);
+    init.n = 1;   feed(&m, init, 1, &t); show("Detecting breath", "Please Wait 12s ");
+    init.n = 50;  feed(&m, init, 1, &t); show("Detecting breath", "Please Wait 11s ");
+    init.n = 51;  feed(&m, init, 1, &t); show("Detecting breath", "Please Wait 11s ");
+    init.n = 550; feed(&m, init, 1, &t); show("Detecting breath", "Please Wait  1s ");
+    init.n = 599; feed(&m, init, 1, &t); show("Detecting breath", "Please Wait  1s ");
+    SenseUpdate stale = smp(0, BR_UNKNOWN, 0, false);   // 옛 회차 샘플은 남은 시간을 바꾸지 않는다
+    stale.n = 5;  feed(&m, stale, 1, &t); show("Detecting breath", "Please Wait  1s ");
+    SenseUpdate done = smp(1);
+    done.n = 600;
+    feed(&m, done, 1, &t);
     show("Breath detected ", "Wait for EXHALE ");
     feed(&m, smp(1, BR_FALLING, EVENT_EXHALE, true, true, 14.6f), 1, &t);
     show("SYNC EXH    14.6", "LOW  RUN   >STOP");
@@ -599,7 +611,7 @@ static void test_lcd_charset() {
                     const float  bpms[]   = { 0.0f, 5.1f, 14.6f, 43.0f };
                     for (int8_t ph : phases)
                         for (float bpm : bpms) {
-                            m.phase = ph; m.bpm = bpm;
+                            m.phase = ph; m.bpm = bpm; m.settle_left_s = (uint8_t)(bpm > 40 ? 99 : 0);
                             ScreenLines L; logic_render(&m, L);
                             for (int r = 0; r < 2; r++) {
                                 if (strlen(L[r]) != LCD_COLS) bad++;
